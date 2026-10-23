@@ -1,6 +1,7 @@
 """プロジェクトファイルの保存・読込（計画書 7 章 / M5）。
 
-JSON を zlib で圧縮して `.rslide` に保存する（1 万枚でも小さい）。
+`.rslide` に素の JSON（UTF-8・indent=2）で保存する（git で差分が見やすい）。
+旧形式（マジック + zlib 圧縮）のファイルも load_project で読み込める。
 版数フィールドで将来のスキーマ変更に対応する。
 """
 from __future__ import annotations
@@ -15,25 +16,27 @@ from .models import PROJECT_VERSION, Project
 log = logging.getLogger(__name__)
 
 PROJECT_EXTENSION = ".rslide"
-_MAGIC = b"RSLD1"  # 先頭マジック（zlib 圧縮の前）
+_MAGIC = b"RSLD1"  # 旧形式（zlib 圧縮）の読込互換用。保存では使わない。
 
 
 def save_project(project: Project, path: Path | str) -> Path:
-    """プロジェクトを zlib 圧縮 JSON として保存する。"""
+    """プロジェクトを素の JSON（UTF-8・indent=2）として保存する。
+
+    旧形式（マジック + zlib 圧縮）の読み込みは load_project 側で互換維持する。
+    """
     p = Path(path)
     if p.suffix.lower() != PROJECT_EXTENSION:
         p = p.with_suffix(PROJECT_EXTENSION)
-    payload = json.dumps(project.to_dict(), ensure_ascii=False, indent=None)
-    blob = _MAGIC + zlib.compress(payload.encode("utf-8"), level=6)
+    payload = json.dumps(project.to_dict(), ensure_ascii=False, indent=2)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_bytes(blob)
+    tmp.write_text(payload, encoding="utf-8")
     tmp.replace(p)  # 原子的に差し替え
     return p
 
 
 def load_project(path: Path | str) -> Project:
-    """プロジェクトを読み込む。マジックが無ければ素の JSON として扱う。"""
+    """プロジェクトを読み込む。素の JSON を読む（旧形式の zlib 圧縮も自動判別）。"""
     p = Path(path)
     blob = p.read_bytes()
     if blob.startswith(_MAGIC):
