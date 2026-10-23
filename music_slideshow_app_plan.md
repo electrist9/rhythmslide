@@ -82,7 +82,7 @@ Windows デスクトップアプリを作る。
 | 画像処理 | Pillow（サムネイル・クロップ・GIF 初フレームデコード）、Qt QMovie（アニメ GIF のフレーム再生）、OpenCV（顔検出＝F11 実装時のみ） |
 | リアルタイム描画 | Qt ネイティブ（QGraphicsView + QPropertyAnimation。レンダリングに FFmpeg は使わない） |
 | 音声互換変換 | FFmpeg 7.x（同梱バイナリ。QMediaPlayer 非対応形式のみ WAV 変換に使用） |
-| プロジェクト保存 | JSON（zlib 圧縮） |
+| プロジェクト保存 | JSON（素のテキスト。旧 zlib 圧縮も読込互換） |
 | パッケージング | PyInstaller（onedir）+ Inno Setup（インストーラー） |
 | テスト | pytest（アルゴリズム・データモデル）、Qt の GUI はスモークテスト |
 
