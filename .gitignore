@@ -1,0 +1,37 @@
+# ===== RhythmSlide .gitignore =====
+# 追跡対象は「ソース・設定定義・ドキュメント」のみ。
+# 生成物・キャッシュ・仮想環境・マシン依存データ・ツールは除外する。
+
+# --- 仮想環境 ---
+.venv/
+
+# --- Python 生成物 ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.pytest_tmp/
+pytest-cache-files-*/
+pytest-of-*/
+
+# --- ビルド・配布生成物 ---
+build/
+dist/
+*.spec.bak
+
+# --- 実行時データ（キャッシュ・ユーザー設定・サムネイル DB）---
+# パッケージ rhythmslide/ の内側にあるが、ソースではないため除外。
+rhythmslide/data/
+
+# --- 一時・ツール ---
+_tmp/
+.tmp/
+.tmpdl/
+.pipcache/
+acl-recovery/
+tmpd1mxvhmb/
+PortableGit/
+
+# --- マシン依存のユーザープロジェクト（絶対パスを埋め込む）---
+*.rslide
+.rslide_dev/

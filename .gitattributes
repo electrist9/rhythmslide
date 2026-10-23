@@ -1,0 +1,31 @@
+# ===== RhythmSlide .gitattributes =====
+# 改行コードとバイナリ指定を統一し、クローン環境間の差分ノイズを防ぐ。
+
+# 既定: 自動でテキスト判定し、リポジトリには LF で保存
+* text=auto
+
+# テキストファイルは LF 固定（Windows でも作業ツリーは LF）
+*.py    text eol=lf
+*.md    text eol=lf
+*.toml  text eol=lf
+*.txt   text eol=lf
+*.cfg   text eol=lf
+*.ini   text eol=lf
+*.json  text eol=lf
+*.spec  text eol=lf
+*.iss   text eol=lf
+.gitignore   text eol=lf
+.gitattributes text eol=lf
+
+# バイナリ（差分・改行変換しない）
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.wav   binary
+*.mp3   binary
+*.db    binary
+*.zip   binary
+*.exe   binary
+*.dll   binary
