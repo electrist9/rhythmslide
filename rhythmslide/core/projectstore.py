@@ -51,11 +51,15 @@ def load_project(path: Path | str) -> Project:
 
 
 def try_load_project(path: Path | str) -> tuple[Project | None, str | None]:
-    """失敗しても例外を投げず (project, error_message) を返す（UI 用）。"""
+    """失敗しても例外を投げず (project, error_code) を返す（UI 用）。
+
+    error_code は表示文言ではなく安定した識別子（"not_found" / "load_failed"）。
+    UI 側で言語ごとの表示文言へ変換する。
+    """
     try:
         return load_project(path), None
     except FileNotFoundError:
-        return None, "ファイルが見つかりません"
+        return None, "not_found"
     except (ValueError, zlib.error, OSError) as exc:
         log.exception("プロジェクト読込失敗: %s", path)
-        return None, f"読み込みに失敗しました（{exc}）"
+        return None, "load_failed"

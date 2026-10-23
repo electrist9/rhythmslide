@@ -27,7 +27,7 @@ class PresentationWindow(QWidget):
         self.renderer.set_background_mode(settings.background_mode)
         self._slides: list[Slide] = []
         self._t = 0.0
-        self.setWindowTitle("RhythmSlide プレゼンテーション")
+        self.setWindowTitle(self.tr("RhythmSlide プレゼンテーション"))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setCursor(Qt.CursorShape.BlankCursor)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)

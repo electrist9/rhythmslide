@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QObject, QRunnable, Signal
+from PySide6.QtCore import QCoreApplication, QObject, QRunnable, Signal
 
 from ..core.audio import probe_audio
 from ..core.beatcache import BeatCache
@@ -52,7 +52,7 @@ class ScanWorker(_BaseWorker):
         self.follow_links = follow_links
 
     def _run(self) -> None:
-        self.signals.step.emit("写真をスキャン中…")
+        self.signals.step.emit(QCoreApplication.translate("MainWindow", "写真をスキャン中…"))
         result: ScanResult = scan_photo_root(
             self.root, read_exif=False, follow_links=self.follow_links
         )
@@ -89,7 +89,7 @@ class AnalysisWorker(_BaseWorker):
         self.cache = cache or BeatCache()
 
     def _run(self) -> None:
-        self.signals.step.emit("リズムを解析中…")
+        self.signals.step.emit(QCoreApplication.translate("MainWindow", "リズムを解析中…"))
         info: AudioInfo = self.cache.analyze(self.audio_path)
         self.signals.finished.emit(info)
 
