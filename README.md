@@ -55,6 +55,32 @@ python -m rhythmslide
 python -m rhythmslide project.rslide
 ```
 
+## ポータブル版（zip）の起動方法
+
+リリース用の **ポータブル版** は、インストール不要でそのまま動くフォルダを zip にまとめたものです（Python 不要・USB メモリでも動作）。
+
+- ファイル名: `RhythmSlide-<version>-win64.zip`（例: `RhythmSlide-1.0.0-win64.zip`）
+- 中身: トップレベルに `rhythmslide` フォルダが1つ。その中に `rhythmslide.exe` と `_internal\`（依存 DLL・Qt・翻訳 `.qm`・同梱の `ffmpeg`/`ffprobe`）が入っています。
+
+手順:
+
+1. zip を任意の場所（例: `D:\Apps\` や USB メモリ）に**解凍**します（`rhythmslide` フォルダが増えます）。
+2. `rhythmslide\rhythmslide.exe` を**ダブルクリック**（または右クリック → 実行）で起動します。
+
+```powershell
+# コマンドラインから起動する場合
+D:\Apps\rhythmslide\rhythmslide.exe
+D:\Apps\rhythmslide\rhythmslide.exe project.rslide   # .rslide を渡して起動
+```
+
+- **データは exe の隣に保存されます**: 設定（`config.json`）・プリセット（`funscript_presets.json`）・解析/サムネイル キャッシュは、exe と同じ `rhythmslide\data\` にだけ保存されます（`%APPDATA%` などには書きません）。フォルダごとコピーすれば設定・キャッシュもそのまま持ち運べます。
+- **音声デコードは同梱の ffmpeg / ffprobe**（`_internal\bin\`）を使うため、システムに ffmpeg をインストールする必要はありません。
+- **多言語**: 翻訳（`_internal\locale\*.qm`）も同梱済みです。ツールメニュー「言語 / Language / 语言」で切り替えられます（既定は日本語）。
+- **初回同梱の設定**: 同梱の `config.json` は安全な既定値（言語=日本語、外部制御=無効・待ち受け `127.0.0.1`）にサニタイズ済みです。8 種類の FunScript 切替ルール・プリセットも最初から使えます。
+- **Windows SmartScreen**: 未署名の実行ファイルのため、初回に「Windows によって PC が保護されました」と表示されることがあります。その場合は「詳細情報」→「実行」を選んでください。
+
+> zip を再ビルドして作る手順は、後述の「パッケージング」節を参照してください。
+
 ## テスト
 
 ```powershell
@@ -133,6 +159,18 @@ MultiFunPlayer 側は接続先に `127.0.0.1:8080`（同一 PC 内の場合。LA
 pip install pyinstaller
 pyinstaller packaging\rhythmslide.spec
 ```
+
+onedir 版は `dist\rhythmslide\` フォルダに出力されます。これをそのまま zip にするとポータブル版になります（トップレベルにフォルダ名を含める）:
+
+```powershell
+# dist\rhythmslide フォルダを zip 化（トップレベルに rhythmslide/ が入る）
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    "dist\rhythmslide", "dist\RhythmSlide-1.0.0-win64.zip",
+    [System.IO.Compression.CompressionLevel]::Optimal, $true)
+```
+
+`dist\rhythmslide\rhythmslide\data\` に `config.json` と `funscript_presets.json` を置いてから zip 化すると、初期設定とプリセットを同梱できます（配布用に、個人パスや外部制御の設定はサニタイズした既定値にすることをおすすめします）。
 
 ## 実装上の注意（計画書からの変更点）
 
