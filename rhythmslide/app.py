@@ -14,7 +14,9 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
 from . import APP_NAME, __version__
+from .core import appconfig
 from .core.paths import ensure_data_dir
+from .i18n import install_translator, resolve_language
 from .ui.mainwindow import MainWindow
 
 log = logging.getLogger(__name__)
@@ -41,6 +43,12 @@ def main(argv: list[str] | None = None) -> int:
 
     data = ensure_data_dir()
     log.info("データ保存先: %s", data)
+
+    # 言語は config.json から読み、翻訳をインストールしてから UI を構築する
+    # （翻訳は MainWindow 構築前に適用する必要がある）。
+    language = resolve_language(appconfig.load())
+    install_translator(app, language)
+    log.info("表示言語: %s", language)
 
     win = MainWindow()
     win.show()

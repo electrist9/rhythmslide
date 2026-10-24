@@ -22,6 +22,11 @@ WSROOT = os.path.abspath(os.path.join(ROOT, ".."))
 # 正規パッケージを絶対 import する薄い起動子 packaging/entry.py を使う。
 APP_ENTRY = os.path.join(ROOT, "entry.py")
 
+# 翻訳（.qm）を _MEIPASS/locale/ へ同梱する。
+# 実行時は rhythmslide.i18n.locale_dir() が sys._MEIPASS/locale を参照する。
+LOCALE_DIR = os.path.join(WSROOT, "rhythmslide", "locale")
+locale_datas = [(os.path.join(LOCALE_DIR, "*.qm"), "locale")]
+
 # 同梱する ffmpeg / ffprobe を探す
 ffmpeg_dir = os.environ.get("FFMPEG_DIR", ROOT)
 binaries = []
@@ -36,7 +41,7 @@ a = Analysis(
     [APP_ENTRY],
     pathex=[ROOT, WSROOT],
     binaries=binaries,
-    datas=[],
+    datas=locale_datas,
     hiddenimports=[
         "PySide6.QtMultimedia",
         "PySide6.QtMultimediaWidgets",

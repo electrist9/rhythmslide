@@ -37,6 +37,7 @@ from ..core.projectstore import load_project, save_project, try_load_project
 from ..core.renderlogic import slide_at, total_duration
 from ..core.scanner import IMAGE_EXTENSIONS, scan_photo_root
 from ..core.thumbnails import ThumbnailCache
+from ..i18n import LANGUAGE_LABELS, SUPPORTED_LANGS, fmt
 from ..platform.sleepguard import SleepGuard
 from .commands import (
     ChangeSettingsCommand, MoveSlideCommand, ReorderPhotoCommand,
@@ -93,7 +94,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         self.setCentralWidget(splitter)
 
-        dock = QDockWidget("素材", self)
+        dock = QDockWidget(self.tr("素材"), self)
         dock.setWidget(self.material)
         dock.setObjectName("material_dock")
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
@@ -120,53 +121,65 @@ class MainWindow(QMainWindow):
         if self._config.get("rc_enabled"):
             self._start_rc_server()
 
-        self.statusBar().showMessage("写真フォルダと音声・動画ファイルを選択してください")
+        self.statusBar().showMessage(self.tr("写真フォルダと音声・動画ファイルを選択してください"))
 
     # ==================================================================
     # メニュー
     # ==================================================================
     def _build_menus(self) -> None:
         bar = self.menuBar()
-        m_file = bar.addMenu("ファイル")
-        self._act(m_file, "写真フォルダを選択…", self.choose_photo_folder, "Ctrl+O")
-        self._act(m_file, "音声・動画ファイルを選択…", self.choose_audio, "Ctrl+A")
-        self._act(m_file, "FunScript を読み込む…", self.choose_funscript)
-        self._act(m_file, "FunScript を解除", self.clear_funscript)
-        self._act(m_file, "FunScript 検索フォルダ…", self.manage_funscript_search_dirs)
-        self._act(m_file, "FunScript 切替ルール…", self.configure_funscript_rules)
+        m_file = bar.addMenu(self.tr("ファイル"))
+        self._act(m_file, self.tr("写真フォルダを選択…"), self.choose_photo_folder, "Ctrl+O")
+        self._act(m_file, self.tr("音声・動画ファイルを選択…"), self.choose_audio, "Ctrl+A")
+        self._act(m_file, self.tr("FunScript を読み込む…"), self.choose_funscript)
+        self._act(m_file, self.tr("FunScript を解除"), self.clear_funscript)
+        self._act(m_file, self.tr("FunScript 検索フォルダ…"), self.manage_funscript_search_dirs)
+        self._act(m_file, self.tr("FunScript 切替ルール…"), self.configure_funscript_rules)
         m_file.addSeparator()
-        self._act(m_file, "プロジェクト保存…", self.save_project, "Ctrl+S")
-        self._act(m_file, "プロジェクトを開く…", self.open_project, "Ctrl+D")
+        self._act(m_file, self.tr("プロジェクト保存…"), self.save_project, "Ctrl+S")
+        self._act(m_file, self.tr("プロジェクトを開く…"), self.open_project, "Ctrl+D")
         m_file.addSeparator()
-        self._act(m_file, "終了", self.close, "Ctrl+Q")
+        self._act(m_file, self.tr("終了"), self.close, "Ctrl+Q")
 
-        m_edit = bar.addMenu("編集")
-        self._act(m_edit, "元に戻す", self.undo_stack.undo, QKeySequence.StandardKey.Undo)
-        self._act(m_edit, "やり直し", self.undo_stack.redo, QKeySequence.StandardKey.Redo)
+        m_edit = bar.addMenu(self.tr("編集"))
+        self._act(m_edit, self.tr("元に戻す"), self.undo_stack.undo, QKeySequence.StandardKey.Undo)
+        self._act(m_edit, self.tr("やり直し"), self.undo_stack.redo, QKeySequence.StandardKey.Redo)
         m_edit.addSeparator()
-        self.unit_menu = m_edit.addMenu("単位ビート")
+        self.unit_menu = m_edit.addMenu(self.tr("単位ビート"))
         unit_labels = {
-            "auto": "自動",
-            0.5: "半拍（8分音符で切替）",
-            1: "1拍（各ビートで切替）",
-            2: "2拍",
-            4: "4拍",
-            8: "8拍",
-            16: "16拍",
+            "auto": self.tr("自動"),
+            0.5: self.tr("半拍（8分音符で切替）"),
+            1: self.tr("1拍（各ビートで切替）"),
+            2: self.tr("2拍"),
+            4: self.tr("4拍"),
+            8: self.tr("8拍"),
+            16: self.tr("16拍"),
         }
         for u in UNIT_BEATS_CHOICES:
             act = self.unit_menu.addAction(unit_labels.get(u, str(u)))
             act.setCheckable(True)
+            act.setData(str(u))  # 言語に依存しない正規値（照合は text() でなく data()）
             act.setChecked(str(u) == str(self.project.settings.unit_beats))
             act.triggered.connect(lambda checked, uu=u: self._change_unit(uu))
-        self.trans_menu = m_edit.addMenu("既定のトランジション")
+        self.trans_menu = m_edit.addMenu(self.tr("既定のトランジション"))
+        trans_labels = {
+            "none": self.tr("なし"),
+            "crossfade": self.tr("クロスフェード"),
+            "wipe_left": self.tr("左へワイプ"),
+            "wipe_right": self.tr("右へワイプ"),
+            "slide_left": self.tr("左へスライド"),
+            "slide_right": self.tr("右へスライド"),
+            "fade": self.tr("フェード"),
+            "zoom": self.tr("ズーム"),
+        }
         for kind in TRANSITION_TYPES:
-            act = self.trans_menu.addAction(kind)
+            act = self.trans_menu.addAction(trans_labels.get(kind, kind))
             act.setCheckable(True)
+            act.setData(kind)  # 正規値（言語非依存）
             act.setChecked(kind == self.project.settings.transition)
             act.triggered.connect(lambda checked, k=kind: self._change_default_transition(k))
-        self._act(m_edit, "遷移時間(ms)…", self._edit_transition_ms)
-        self.fps_menu = m_edit.addMenu("描画FPS")
+        self._act(m_edit, self.tr("遷移時間(ms)…"), self._edit_transition_ms)
+        self.fps_menu = m_edit.addMenu(self.tr("描画FPS"))
         self._fps_actions: dict[int, object] = {}
         for fps in RENDER_FPS_CHOICES:
             act = self.fps_menu.addAction(f"{fps} FPS")
@@ -175,31 +188,55 @@ class MainWindow(QMainWindow):
             act.triggered.connect(lambda checked, f=fps: self._change_render_fps(f))
             self._fps_actions[fps] = act
         m_edit.addSeparator()
-        self._random_order_action = m_edit.addAction("再生のたびに画像順をランダム化")
+        self._random_order_action = m_edit.addAction(self.tr("再生のたびに画像順をランダム化"))
         self._random_order_action.setCheckable(True)
         self._random_order_action.setChecked(self.project.settings.random_order)
         self._random_order_action.triggered.connect(self._toggle_random_order)
-        self._random_transition_action = m_edit.addAction("切り替えごとにトランジットをランダム化")
+        self._random_transition_action = m_edit.addAction(self.tr("切り替えごとにトランジットをランダム化"))
         self._random_transition_action.setCheckable(True)
         self._random_transition_action.setChecked(self.project.settings.random_transition)
         self._random_transition_action.triggered.connect(self._toggle_random_transition)
-        self._dominant_bg_action = m_edit.addAction("余白を画像の支配色にする")
+        self._dominant_bg_action = m_edit.addAction(self.tr("余白を画像の支配色にする"))
         self._dominant_bg_action.setCheckable(True)
         self._dominant_bg_action.setChecked(
             self.project.settings.presentation.background_mode == "dominant"
         )
         self._dominant_bg_action.triggered.connect(self._toggle_dominant_background)
 
-        m_play = bar.addMenu("再生")
-        self._act(m_play, "再生/一時停止", self.toggle_play, Qt.Key.Key_Space)
-        self._act(m_play, "最初から再生", self.play_from_start, "Home")
+        m_play = bar.addMenu(self.tr("再生"))
+        self._act(m_play, self.tr("再生/一時停止"), self.toggle_play, Qt.Key.Key_Space)
+        self._act(m_play, self.tr("最初から再生"), self.play_from_start, "Home")
         m_play.addSeparator()
-        self._act(m_play, "プレゼン開始", self.start_presentation, "F5")
+        self._act(m_play, self.tr("プレゼン開始"), self.start_presentation, "F5")
         m_play.addSeparator()
-        self._act(m_play, "画像を全画面表示 / 戻す", self._toggle_preview_fullscreen, "F11")
+        self._act(m_play, self.tr("画像を全画面表示 / 戻す"), self._toggle_preview_fullscreen, "F11")
 
-        m_tools = bar.addMenu("ツール")
-        self._act(m_tools, "外部制御（VLC 互換）…", self.configure_remote_control)
+        m_tools = bar.addMenu(self.tr("ツール"))
+        self._act(m_tools, self.tr("外部制御（VLC 互換）…"), self.configure_remote_control)
+        self._build_language_menu(m_tools)
+
+    def _build_language_menu(self, parent_menu) -> None:
+        """表示言語を選ぶメニュー（ツール配下）。選択は config に保存し再起動で反映。"""
+        lang_menu = parent_menu.addMenu(self.tr("言語 / Language / 语言"))
+        current = str(self._config.get("language", "") or "ja")
+        for code in SUPPORTED_LANGS:
+            act = lang_menu.addAction(LANGUAGE_LABELS.get(code, code))
+            act.setCheckable(True)
+            act.setData(code)
+            act.setChecked(code == current)
+            act.triggered.connect(lambda checked, c=code: self._change_language(c))
+
+    def _change_language(self, code: str) -> None:
+        """言語を config.json に保存する。反映には再起動が必要（ライブ切替はしない）。"""
+        if code not in SUPPORTED_LANGS:
+            return
+        self._config["language"] = code
+        appconfig.save(self._config)
+        QMessageBox.information(
+            self, self.tr("言語"),
+            self.tr("言語設定を保存しました。反映するにはアプリを再起動してください。"),
+        )
+
 
     def _act(self, menu, text, slot, shortcut=None) -> QAction:
         act = QAction(text, self)
@@ -241,7 +278,7 @@ class MainWindow(QMainWindow):
 
     def choose_photo_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self, "写真フォルダを選択", self._start_dir("photo_dir", str(Path.home()))
+            self, self.tr("写真フォルダを選択"), self._start_dir("photo_dir", str(Path.home()))
         )
         if not folder:
             return
@@ -249,15 +286,17 @@ class MainWindow(QMainWindow):
         self.project.photo_root = folder
         worker = ScanWorker(folder)
         worker.signals.step.connect(self.statusBar().showMessage)
-        worker.signals.error.connect(lambda m: QMessageBox.warning(self, "スキャン", m))
+        worker.signals.error.connect(lambda m: QMessageBox.warning(self, self.tr("スキャン"), m))
         worker.signals.finished.connect(self._on_scan_finished)
         self.pool.start(worker)
 
     def _on_scan_finished(self, result) -> None:
         self.project.replace_photos(result.photos)
         self.material.set_photos(self.project.photos)
-        skipped = f"（スキップ {result.skipped}）" if result.skipped else ""
-        self.statusBar().showMessage(f"{result.count} 枚を検出{skipped}")
+        skipped = fmt(self.tr("（スキップ %1）"), result.skipped) if result.skipped else ""
+        self.statusBar().showMessage(
+            fmt(self.tr("%1 枚を検出%2"), result.count, skipped)
+        )
         # 後続: EXIF 補完とサムネイル生成
         enrich = EnrichWorker(self.project.photos)
         enrich.signals.finished.connect(self._on_enrich_finished)
@@ -273,7 +312,8 @@ class MainWindow(QMainWindow):
         worker = ThumbnailWorker(photos, self.thumb_cache)
         worker.signals.finished.connect(self.material.thumbnail_ready)
         worker.signals.progress.connect(
-            lambda done, total: self.statusBar().showMessage(f"サムネイル生成 {done}/{total}")
+            lambda done, total: self.statusBar().showMessage(
+                fmt(self.tr("サムネイル生成 %1/%2"), done, total))
         )
         self.pool.start(worker)
 
@@ -281,13 +321,13 @@ class MainWindow(QMainWindow):
         audio_pat = " ".join(f"*{e}" for e in sorted(AUDIO_EXTENSIONS))
         video_pat = " ".join(f"*{e}" for e in sorted(VIDEO_EXTENSIONS))
         flt = (
-            f"音声・動画ファイル ({audio_pat} {video_pat});;"
-            f"音声ファイル ({audio_pat});;"
-            f"動画ファイル ({video_pat});;"
-            "すべて (*)"
+            fmt(self.tr("音声・動画ファイル (%1 %2)"), audio_pat, video_pat) + ";;"
+            + fmt(self.tr("音声ファイル (%1)"), audio_pat) + ";;"
+            + fmt(self.tr("動画ファイル (%1)"), video_pat) + ";;"
+            + self.tr("すべて (*)")
         )
         path, _ = QFileDialog.getOpenFileName(
-            self, "音声・動画ファイルを選択", self._start_dir("audio_dir", str(Path.home())), flt
+            self, self.tr("音声・動画ファイルを選択"), self._start_dir("audio_dir", str(Path.home())), flt
         )
         if not path:
             return
@@ -299,7 +339,7 @@ class MainWindow(QMainWindow):
         # interactive=False は外部制御からの読み込み。モーダル表示を避けログに出す。
         if Path(path).suffix.lower() in VIDEO_EXTENSIONS and not has_audio_stream(path):
             if interactive:
-                QMessageBox.warning(self, "音声", "この動画ファイルには音声トラックがありません。")
+                QMessageBox.warning(self, self.tr("音声"), self.tr("この動画ファイルには音声トラックがありません。"))
             else:
                 log.warning("音声トラックがないため読み込みを拒否: %s", path)
             return
@@ -312,7 +352,7 @@ class MainWindow(QMainWindow):
         worker = AnalysisWorker(path, self.beat_cache)
         worker.signals.step.connect(self.statusBar().showMessage)
         if interactive:
-            worker.signals.error.connect(lambda m: QMessageBox.warning(self, "解析", m))
+            worker.signals.error.connect(lambda m: QMessageBox.warning(self, self.tr("解析"), m))
         else:
             worker.signals.error.connect(lambda m: log.warning("解析エラー: %s", m))
         worker.signals.finished.connect(self._on_analysis_finished)
@@ -322,7 +362,8 @@ class MainWindow(QMainWindow):
         self.project.audio = info
         self._maybe_autoload_funscript(info.path)
         self.statusBar().showMessage(
-            f"解析完了: {info.bpm:.0f} BPM / 信頼度 {info.confidence:.2f} / {info.duration:.0f}s"
+            fmt(self.tr("解析完了: %1 BPM / 信頼度 %2 / %3s"),
+                f"{info.bpm:.0f}", f"{info.confidence:.2f}", f"{info.duration:.0f}")
         )
         self.relayout()
 
@@ -332,15 +373,15 @@ class MainWindow(QMainWindow):
     def choose_funscript(self) -> None:
         if self.project.audio is None:
             QMessageBox.information(
-                self, "FunScript", "先に音声・動画ファイルを選択してください。"
+                self, self.tr("FunScript"), self.tr("先に音声・動画ファイルを選択してください。")
             )
             return
         start = self._start_dir("funscript_dir", str(Path(self.project.audio.path).parent))
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "FunScript を読み込む",
+            self.tr("FunScript を読み込む"),
             start,
-            "FunScript (*.funscript);;すべてのファイル (*.*)",
+            self.tr("FunScript (*.funscript);;すべてのファイル (*.*)"),
         )
         if not path:
             return
@@ -357,15 +398,18 @@ class MainWindow(QMainWindow):
                 path, st.funscript_mode, st.funscript_threshold, st.funscript_step
             )
         except ValueError as exc:
-            QMessageBox.warning(self, "FunScript", str(exc))
+            QMessageBox.warning(
+                self, self.tr("FunScript"),
+                fmt(self.tr("FunScript の読み込みに失敗しました: %1"), str(exc)),
+            )
             return False
         if not switches:
-            QMessageBox.warning(self, "FunScript", "画像の切替点が見つかりませんでした。")
+            QMessageBox.warning(self, self.tr("FunScript"), self.tr("画像の切替点が見つかりませんでした。"))
             return False
         audio.funscript_path = str(path)
         audio.funscript_switches = switches
         self._remember_dir("funscript_dir", path)
-        self.statusBar().showMessage(f"FunScript 読込: 切替点 {len(switches)} 件")
+        self.statusBar().showMessage(fmt(self.tr("FunScript 読込: 切替点 %1 件"), len(switches)))
         self.relayout()
         return True
 
@@ -393,18 +437,18 @@ class MainWindow(QMainWindow):
         """FunScript 検索フォルダの一覧を追加/削除して設定に保存する。"""
         dirs = self._funscript_search_dirs()
         dlg = QDialog(self)
-        dlg.setWindowTitle("FunScript 検索フォルダ")
+        dlg.setWindowTitle(self.tr("FunScript 検索フォルダ"))
         layout = QVBoxLayout(dlg)
         layout.addWidget(QLabel(
-            "音声・動画ファイルを選択した際、このフォルダ配下を再帰的に検索し、\n"
-            "同じベースファイル名の .funscript があれば自動的に読み込みます。"
+            self.tr("音声・動画ファイルを選択した際、このフォルダ配下を再帰的に検索し、\n"
+                    "同じベースファイル名の .funscript があれば自動的に読み込みます。")
         ))
         lst = QListWidget(dlg)
         lst.addItems(dirs)
         layout.addWidget(lst)
         btn_row = QHBoxLayout()
-        btn_add = QPushButton("追加…", dlg)
-        btn_remove = QPushButton("削除", dlg)
+        btn_add = QPushButton(self.tr("追加…"), dlg)
+        btn_remove = QPushButton(self.tr("削除"), dlg)
         btn_row.addWidget(btn_add)
         btn_row.addWidget(btn_remove)
         btn_row.addStretch(1)
@@ -412,7 +456,7 @@ class MainWindow(QMainWindow):
 
         def add_dir() -> None:
             start = dirs[-1] if dirs else self._start_dir("funscript_dir", str(Path.home()))
-            folder = QFileDialog.getExistingDirectory(dlg, "検索フォルダを追加", start)
+            folder = QFileDialog.getExistingDirectory(dlg, self.tr("検索フォルダを追加"), start)
             if folder and folder not in dirs:
                 dirs.append(folder)
                 lst.addItem(folder)
@@ -452,7 +496,7 @@ class MainWindow(QMainWindow):
             return
         audio.funscript_path = ""
         audio.funscript_switches = []
-        self.statusBar().showMessage("FunScript を解除しました")
+        self.statusBar().showMessage(self.tr("FunScript を解除しました"))
         self.relayout()
 
     def configure_funscript_rules(self) -> None:
@@ -469,15 +513,15 @@ class MainWindow(QMainWindow):
         presets = sanitize_presets(appconfig.load_funscript_presets())
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("FunScript 切替ルール")
+        dlg.setWindowTitle(self.tr("FunScript 切替ルール"))
         form = QFormLayout(dlg)
 
         # --- 4項目のウィジェット（先に作成し、プリセット適用から参照できるようにする）---
         mode_box = QComboBox(dlg)
         for key, label in (
-            ("up", "上昇のみ（既定）"),
-            ("peak", "局所極値（切り返しの頂点）"),
-            ("cumulative", "累積移動距離"),
+            ("up", self.tr("上昇のみ（既定）")),
+            ("peak", self.tr("局所極値（切り返しの頂点）")),
+            ("cumulative", self.tr("累積移動距離")),
         ):
             mode_box.addItem(label, key)
         idx = mode_box.findData(st.funscript_mode)
@@ -499,8 +543,8 @@ class MainWindow(QMainWindow):
 
         order_box = QComboBox(dlg)
         for key, label in (
-            ("forward", "順送り（既定）"),
-            ("pingpong", "往復（ping-pong）"),
+            ("forward", self.tr("順送り（既定）")),
+            ("pingpong", self.tr("往復（ping-pong）")),
         ):
             order_box.addItem(label, key)
         oidx = order_box.findData(st.photo_order)
@@ -517,7 +561,7 @@ class MainWindow(QMainWindow):
             """プリセット一覧を combo に再構築する（信号は止めて再帰適用を防ぐ）。"""
             preset_box.blockSignals(True)
             preset_box.clear()
-            preset_box.addItem("（プリセットを選択）", None)
+            preset_box.addItem(self.tr("（プリセットを選択）"), None)
             for p in presets:
                 preset_box.addItem(p["name"], p["name"])
             i = preset_box.findData(select_name) if select_name else 0
@@ -563,7 +607,7 @@ class MainWindow(QMainWindow):
             if preset_box.currentIndex() > 0:
                 default_name = str(preset_box.currentText())
             name, ok = QInputDialog.getText(
-                self, "プリセットを保存", "プリセット名:", text=default_name
+                self, self.tr("プリセットを保存"), self.tr("プリセット名:"), text=default_name
             )
             if not ok:
                 return
@@ -594,9 +638,9 @@ class MainWindow(QMainWindow):
         thr_box.valueChanged.connect(mark_custom)
         step_box.valueChanged.connect(mark_custom)
         order_box.currentIndexChanged.connect(mark_custom)
-        save_btn = QPushButton("保存", dlg)
+        save_btn = QPushButton(self.tr("保存"), dlg)
         save_btn.clicked.connect(save_preset)
-        del_btn = QPushButton("削除", dlg)
+        del_btn = QPushButton(self.tr("削除"), dlg)
         del_btn.clicked.connect(delete_preset)
         preset_row = QHBoxLayout()
         preset_row.addWidget(preset_box, 1)
@@ -604,11 +648,11 @@ class MainWindow(QMainWindow):
         preset_row.addWidget(del_btn)
 
         # 行の並び（プリセットを最上部に）
-        form.addRow("プリセット", preset_row)
-        form.addRow("切替タイミング", mode_box)
-        form.addRow("振幅しきい値", thr_box)
-        form.addRow("累積ステップ", step_box)
-        form.addRow("画像の循環順", order_box)
+        form.addRow(self.tr("プリセット"), preset_row)
+        form.addRow(self.tr("切替タイミング"), mode_box)
+        form.addRow(self.tr("振幅しきい値"), thr_box)
+        form.addRow(self.tr("累積ステップ"), step_box)
+        form.addRow(self.tr("画像の循環順"), order_box)
 
         box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -643,12 +687,13 @@ class MainWindow(QMainWindow):
             self._apply_funscript(audio.funscript_path)
         else:
             self.relayout()
-        self.statusBar().showMessage("FunScript 切替ルールを更新しました")
+        self.statusBar().showMessage(self.tr("FunScript 切替ルールを更新しました"))
 
     def _on_media_error(self, error, message: str) -> None:
         # 動画コンテナなど QMediaPlayer が再生できない形式のフィードバック。
         if error != QMediaPlayer.Error.NoError:
-            self.statusBar().showMessage(f"再生エラー: {message or 'このファイルは再生できません'}")
+            detail = message or self.tr("このファイルは再生できません")
+            self.statusBar().showMessage(fmt(self.tr("再生エラー: %1"), detail))
 
     # ==================================================================
     # レイアウト
@@ -669,7 +714,8 @@ class MainWindow(QMainWindow):
         if self._presentation is not None:
             self._presentation.set_slides(self.slides)
         self.statusBar().showMessage(
-            f"スライド {len(self.slides)} 枚 / 総尺 {dur:.1f}s / 方式 {plan.method}"
+            fmt(self.tr("スライド %1 枚 / 総尺 %2s / 方式 %3"),
+                len(self.slides), f"{dur:.1f}", plan.method)
         )
 
     # ==================================================================
@@ -712,7 +758,7 @@ class MainWindow(QMainWindow):
             self._render_timer.start(interval)
         if self._presentation is not None:
             self._presentation.set_render_interval(interval)
-        self.statusBar().showMessage(f"描画 FPS を {fps} にしました")
+        self.statusBar().showMessage(fmt(self.tr("描画 FPS を %1 にしました"), fps))
 
     def _toggle_random_order(self, checked: bool) -> None:
         self.project.settings.random_order = checked
@@ -818,18 +864,18 @@ class MainWindow(QMainWindow):
     def _change_unit(self, unit) -> None:
         self.undo_stack.push(ChangeSettingsCommand(self.project.settings, "unit_beats", unit))
         for act in self.unit_menu.actions():
-            act.setChecked(act.text() == str(unit))
+            act.setChecked(act.data() == str(unit))
         self.relayout()
 
     def _change_default_transition(self, kind: str) -> None:
         self.undo_stack.push(ChangeSettingsCommand(self.project.settings, "transition", kind))
         for act in self.trans_menu.actions():
-            act.setChecked(act.text() == kind)
+            act.setChecked(act.data() == kind)
         self.relayout()
 
     def _edit_transition_ms(self) -> None:
         val, ok = QInputDialog.getInt(
-            self, "遷移時間", "トランジション時間 (ms):",
+            self, self.tr("遷移時間"), self.tr("トランジション時間 (ms):"),
             self.project.settings.transition_ms, 0, 3000, 50,
         )
         if ok:
@@ -844,7 +890,7 @@ class MainWindow(QMainWindow):
         if not self.slides:
             self.relayout()
         if not self.slides:
-            QMessageBox.information(self, "プレゼン", "表示するスライドがありません。")
+            QMessageBox.information(self, self.tr("プレゼン"), self.tr("表示するスライドがありません。"))
             return
         ps = self.project.settings.presentation
         # プレゼン中はスリープ・画面オフを抑止
@@ -948,20 +994,20 @@ class MainWindow(QMainWindow):
         if last and Path(last).is_dir():
             start = str(Path(last) / "project.rslide")
         path, _ = QFileDialog.getSaveFileName(
-            self, "プロジェクト保存", start, "RhythmSlide (*.rslide)"
+            self, self.tr("プロジェクト保存"), start, "RhythmSlide (*.rslide)"
         )
         if not path:
             return
         self._remember_dir("project_dir", path)
         try:
             save_project(self.project, path)
-            self.statusBar().showMessage(f"保存しました: {path}")
+            self.statusBar().showMessage(fmt(self.tr("保存しました: %1"), path))
         except OSError as exc:
-            QMessageBox.warning(self, "保存", f"保存に失敗: {exc}")
+            QMessageBox.warning(self, self.tr("保存"), fmt(self.tr("保存に失敗: %1"), str(exc)))
 
     def open_project(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "プロジェクトを開く", self._start_dir("project_dir", ""), "RhythmSlide (*.rslide)"
+            self, self.tr("プロジェクトを開く"), self._start_dir("project_dir", ""), "RhythmSlide (*.rslide)"
         )
         if not path:
             return
@@ -971,7 +1017,7 @@ class MainWindow(QMainWindow):
     def _load_project_path(self, path: str) -> bool:
         proj, err = try_load_project(path)
         if err:
-            QMessageBox.warning(self, "読み込み", err)
+            QMessageBox.warning(self, self.tr("読み込み"), self._project_load_error_text(err))
             return False
         self.project = proj
         self.undo_stack.clear()
@@ -986,8 +1032,14 @@ class MainWindow(QMainWindow):
         if self.project.audio:
             self.player.setSource(_url(self.project.audio.path))
         self.relayout()
-        self.statusBar().showMessage(f"読み込みました: {path}")
+        self.statusBar().showMessage(fmt(self.tr("読み込みました: %1"), path))
         return True
+
+    def _project_load_error_text(self, code: str) -> str:
+        """try_load_project が返す安定エラーコードを表示文言へ変換する。"""
+        if code == "not_found":
+            return self.tr("ファイルが見つかりません")
+        return self.tr("読み込みに失敗しました")
 
     # ==================================================================
     def _preview_photo(self, path: str) -> None:
@@ -1003,13 +1055,13 @@ class MainWindow(QMainWindow):
         """外部制御の On/Off・ポート・パスワードを設定して保存する。"""
         cfg = self._config
         dlg = QDialog(self)
-        dlg.setWindowTitle("外部制御（VLC 互換）")
+        dlg.setWindowTitle(self.tr("外部制御（VLC 互換）"))
         layout = QVBoxLayout(dlg)
         layout.addWidget(QLabel(
-            "MultiFunPlayer などの外部アプリから、VLC と同じ HTTP インターフェースで\n"
-            "再生・停止・シーク・ファイル読み込みを行えます。"
+            self.tr("MultiFunPlayer などの外部アプリから、VLC と同じ HTTP インターフェースで\n"
+                    "再生・停止・シーク・ファイル読み込みを行えます。")
         ))
-        enable = QCheckBox("外部制御を有効にする", dlg)
+        enable = QCheckBox(self.tr("外部制御を有効にする"), dlg)
         enable.setChecked(bool(cfg.get("rc_enabled", False)))
         layout.addWidget(enable)
 
@@ -1019,18 +1071,18 @@ class MainWindow(QMainWindow):
         port.setValue(int(cfg.get("rc_port", 8080) or 8080))
         addr = QLineEdit(dlg)
         addr.setText(str(cfg.get("rc_address", "") or "127.0.0.1"))
-        addr.setPlaceholderText("127.0.0.1 = この PC 内のみ / 0.0.0.0 = LAN 全体")
+        addr.setPlaceholderText(self.tr("127.0.0.1 = この PC 内のみ / 0.0.0.0 = LAN 全体"))
         pw = QLineEdit(dlg)
         pw.setText(str(cfg.get("rc_password", "") or ""))
-        pw.setPlaceholderText("（空欄 = 認証なし）")
-        form.addRow("ポート:", port)
-        form.addRow("待ち受けアドレス:", addr)
-        form.addRow("パスワード:", pw)
+        pw.setPlaceholderText(self.tr("（空欄 = 認証なし）"))
+        form.addRow(self.tr("ポート:"), port)
+        form.addRow(self.tr("待ち受けアドレス:"), addr)
+        form.addRow(self.tr("パスワード:"), pw)
         layout.addLayout(form)
         layout.addWidget(QLabel(
-            "待ち受けアドレスの既定は 127.0.0.1（この PC 内からのみ制御可）です。\n"
-            "0.0.0.0 などに設定すると LAN 内の他端末からも制御できます。その場合は\n"
-            "パスワードを設定し、LAN のセキュリティが確保されている前提でご利用ください。"
+            self.tr("待ち受けアドレスの既定は 127.0.0.1（この PC 内からのみ制御可）です。\n"
+                    "0.0.0.0 などに設定すると LAN 内の他端末からも制御できます。その場合は\n"
+                    "パスワードを設定し、LAN のセキュリティが確保されている前提でご利用ください。")
         ))
 
         status = QLabel(
@@ -1058,9 +1110,9 @@ class MainWindow(QMainWindow):
         address = addr.text().strip() or "127.0.0.1"
         if QHostAddress(address).isNull():
             QMessageBox.warning(
-                self, "外部制御",
-                f"待ち受けアドレスが不正です: {address}\n"
-                "127.0.0.1 や 0.0.0.0 のような IP アドレスで入力してください。",
+                self, self.tr("外部制御"),
+                fmt(self.tr("待ち受けアドレスが不正です: %1\n"
+                            "127.0.0.1 や 0.0.0.0 のような IP アドレスで入力してください。"), address),
             )
             return
         cfg["rc_enabled"] = bool(enable.isChecked())
@@ -1074,14 +1126,12 @@ class MainWindow(QMainWindow):
 
     def _rc_status_text(self, enabled: bool, port: int, address: str = "127.0.0.1") -> str:
         if not enabled:
-            return "外部制御: 無効"
+            return self.tr("外部制御: 無効")
         addr = (address or "127.0.0.1").strip()
         if addr in ("0.0.0.0", "::", "*"):
-            return (
-                f"外部制御: ポート {port} で全インターフェース待受中"
-                "（LAN 内の他端末からもアクセス可）"
-            )
-        return f"外部制御: http://{addr}:{port}/requests/status.json で待受中"
+            return fmt(self.tr("外部制御: ポート %1 で全インターフェース待受中"
+                               "（LAN 内の他端末からもアクセス可）"), port)
+        return fmt(self.tr("外部制御: http://%1:%2/requests/status.json で待受中"), addr, port)
 
     def _apply_rc_config(self) -> None:
         if self._config.get("rc_enabled"):
@@ -1294,7 +1344,7 @@ class _FullscreenPreviewHost(QWidget):
         self._on_close = on_close
         self._on_play_pause = on_play_pause
         self._on_restart = on_restart
-        self.setWindowTitle("RhythmSlide 画像表示")
+        self.setWindowTitle(self.tr("RhythmSlide 画像表示"))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         # 全画面中はカーソルを隠す（プレビューは明示カーソルを持たないので継承する）
         self.setCursor(Qt.CursorShape.BlankCursor)

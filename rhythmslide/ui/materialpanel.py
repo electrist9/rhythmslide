@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from ..core.models import PhotoItem
 from ..core.thumbnails import ThumbnailCache
+from ..i18n import fmt
 
 _PLACEHOLDER: QPixmap | None = None
 
@@ -129,17 +130,17 @@ class MaterialPanel(QWidget):
         self.view.doubleClicked.connect(self._on_double)
 
         self.folder_combo = QComboBox(self)
-        self.folder_combo.addItem("すべてのフォルダ", "")
+        self.folder_combo.addItem(self.tr("すべてのフォルダ"), "")
         self.folder_combo.currentIndexChanged.connect(
             lambda: self.model.set_folder(self.folder_combo.currentData() or "")
         )
         self.search = QLineEdit(self)
-        self.search.setPlaceholderText("ファイル名で絞り込み")
+        self.search.setPlaceholderText(self.tr("ファイル名で絞り込み"))
         self.search.textChanged.connect(self.model.set_query)
-        self.count_label = QLabel("0 枚", self)
+        self.count_label = QLabel(fmt(self.tr("%1 枚"), 0), self)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel("フォルダ:"))
+        top.addWidget(QLabel(self.tr("フォルダ:")))
         top.addWidget(self.folder_combo, 1)
         top.addWidget(self.search, 1)
         top.addWidget(self.count_label)
@@ -152,13 +153,13 @@ class MaterialPanel(QWidget):
     def set_photos(self, photos: list[PhotoItem]) -> None:
         self.model.set_photos(photos)
         self._refresh_folders()
-        self.count_label.setText(f"{len(photos)} 枚")
+        self.count_label.setText(fmt(self.tr("%1 枚"), len(photos)))
 
     def _refresh_folders(self) -> None:
         current = self.folder_combo.currentData()
         self.folder_combo.blockSignals(True)
         self.folder_combo.clear()
-        self.folder_combo.addItem("すべてのフォルダ", "")
+        self.folder_combo.addItem(self.tr("すべてのフォルダ"), "")
         for f in self.model.folders():
             self.folder_combo.addItem(f, f)
         idx = self.folder_combo.findData(current or "")
