@@ -5,9 +5,8 @@
 
 ## A. 未検証・確認事項（優先度順）
 
-### A1. `pyproject.toml` の version が 0.1.0 のまま（1.0.0 にズレ）
-- 単一定義元は `rhythmslide/__init__.py` の `__version__ = "1.0.0"`（D15 系）。`pyproject.toml` L7 は古い。
-- 対応案: `0.1.0` → `1.0.0` に更新してコミット。または setuptools の動的バージョン（`dynamic = ["version"]`）で単一化。**未着手・未合意**。
+### A1. ~~`pyproject.toml` の version が 0.1.0 のまま（1.0.0 にズレ）~~ ✅ 完了
+- 単一定義元は `rhythmslide/__init__.py` の `__version__ = "1.0.0"`（D15 系）。`pyproject.toml` L7 を `1.0.0` に更新済み。
 
 ### A2. Inno Setup インストーラ（`packaging/installer.iss`）は一度も実行検証していない
 - 便携 ZIP が正式配布物。インストーラ版の要求は来ていないが、iss が現行 spec（locale datas・bin/ffmpeg・onedir）と整合したままか未確認。
@@ -26,8 +25,8 @@
 ### A6. exe 未署名 → SmartScreen 警告
 - 便携 ZIP の `rhythmslide.exe` は未署名（README に「詳細情報→実行」案内記載済み）。コード署名証明書は未所持。要求があれば導入。
 
-### A7. `dist/` の残骸整理（gitignore 対象なので repo には無影響）
-- 削除可: `dist/RhythmSlide-0.1.0-win64.zip`（旧版）、`dist/rhythmslide.exe`（onefile 実験の残骸、便携版と無関係）。
+### A7. ~~`dist/` の残骸整理~~ ✅ 完了
+- 削除済み: `dist/RhythmSlide-0.1.0-win64.zip`（旧版）、`dist/rhythmslide.exe`（onefile 実験残骸）。
 - 保持: `dist/RhythmSlide-1.0.0-win64.zip`（配布物）、`dist/rhythmslide/`（onedir 材料）。
 
 ## B. 実装の穴（意図的に未接続の部分）
