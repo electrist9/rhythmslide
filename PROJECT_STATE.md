@@ -49,7 +49,7 @@
 | `dist/RhythmSlide-1.0.0-win64.zip`（252,673,442 B ≒ 241 MB、271 エントリ） | **現行の便携 ZIP**。v1.0.0 + i18n + listen-address + JSON 化を反映。内部検証済み（トップレベル `rhythmslide/`、`rhythmslide.exe`、`_internal/bin/ffmpeg.exe`+`ffprobe.exe`、`_internal/locale/*.qm`、`rhythmslide/data/{config,funscript_presets}.json`）。同梱 `config.json` は**サニタイズ済み**（言語 ja・RC 無効・127.0.0.1） |
 | `dist/rhythmslide/` | onedir 出力フォルダ（便携 ZIP の材料。2026-10-24 ビルド） |
 | `dist/RhythmSlide-0.1.0-win64.zip` | **旧版（残置）**。削除可 |
-| `dist/rhythmslide.exe`（約 251 MB） | **onefile 実験の残骸**。便携版には不要。削除可 |
+
 
 便携版の使い方・zip 化手順は `README.md`「ポータブル版（zip）の起動方法」「パッケージング」節に記載済み。
 

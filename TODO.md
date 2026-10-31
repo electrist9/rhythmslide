@@ -12,8 +12,8 @@
 - 便携 ZIP が正式配布物。インストーラ版の要求は来ていないが、iss が現行 spec（locale datas・bin/ffmpeg・onedir）と整合したままか未確認。
 - 検証する場合: `iscc packaging\installer.iss` → 生成 setup でインストール → 起動・言語・RC を確認。
 
-### A3. `packaging/rhythmslide_onefile.spec` は最近の再ビルドで検証していない
-- i18n `datas`（locale_datas）は追記済みだが、onefile 版のビルド・`sys._MEIPASS/locale` 解決・`_MEIPASS/bin` の ffmpeg 解決は便携版（onedir）側でしか実証済みでない。onefile 配布要求が出た時に最初にビルド検証すること。
+### A3. ~~`packaging/rhythmslide_onefile.spec` は最近の再ビルドで検証していない~~ ✅ 完了（不採用により削除）
+- onedir 構成を採用しているため onefile は不採用。`packaging/rhythmslide_onefile.spec` および `build/rhythmslide_onefile/` を削除済み。
 
 ### A4. pytest 全スイートを通常環境で実行していない
 - 開発サンドボックスでは pytest-qt の tmp_path 作成が PermissionError になる（環境制約。コード不具合ではないと確認済み）。テストコード自体は存在し、主要ロジックはインライン検証済み。

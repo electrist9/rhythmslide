@@ -122,7 +122,7 @@ UI 表示言語は **日本語（既定）/ English / 中文** から選べま�
 
 翻訳は Qt の標準機構（`tr()` → `.ts` → `.qm` + `QTranslator`）で実装しています。
 翻訳ファイルは `rhythmslide/locale/rhythmslide_<lang>.qm`（編集用の元データは同じフォルダの `.ts`）に置き、
-PyInstaller ビルド時は onedir で `_internal/locale/`、onefile で `_MEIPASS/locale/` へ同梱されます。
+PyInstaller ビルド時は onedir で `_internal/locale/` へ同梱されます。
 原文（日本語）は翻訳ファイル不要で、`language` が `ja` のときは翻訳をロードしません。
 翻訳の更新手順は `pyside6-lupdate`（原文抽出）→ `.ts` を翻訳編集 → `pyside6-lrelease`（`.qm` 化）です。
 

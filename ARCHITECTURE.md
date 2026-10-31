@@ -114,7 +114,6 @@ rhythmslide/
 
 - **エントリは `packaging/entry.py`**（`from rhythmslide.app import main`）。`__main__.py` は相対 import のため spec エントリにできない（entry.py に日本語コメントで理由記載）。
 - `packaging/rhythmslide.spec`（onedir、便携版の本命）: `pathex=[ROOT,WSROOT]`、hiddenimports `PySide6.QtMultimedia/QtMultimediaWidgets`、`datas` に `locale/*.qm → locale`、ffmpeg/ffprobe を `shutil.which()`（または `FFMPEG_DIR`）で `_internal/bin/` へ、excludes `tkinter,matplotlib,scipy,librosa,numba`、`EXE(exclude_binaries=True)` + `COLLECT(name="rhythmslide")` → 出力 `dist/rhythmslide/`。
-- `packaging/rhythmslide_onefile.spec` は単一 EXE 版（`runtime_tmpdir=None`、COLLECT なし）。便携版には**使わない**（起動毎に `%TEMP%\_MEI…` 解凍があるため）。
 - **便携 ZIP**: onedir フォルダをそのまま zip 化（`ZipFile.CreateFromDirectory(..., includeBaseDirectory=$true)` → トップレベル `rhythmslide/`）。zip 化前に `dist/rhythmslide/rhythmslide/data/` へ**サニタイズ済み** `config.json` + `funscript_presets.json` を置く（個人パス・パスワードの混入禁止）。
 - onedir トップレベルは `rhythmslide.exe` + `_internal/` のみ（`bin/` はトップレベルに**ない**。`_internal/bin/`）。
 - `packaging/installer.iss`（Inno Setup）は存在するが**実行検証は未**（→ TODO）。
