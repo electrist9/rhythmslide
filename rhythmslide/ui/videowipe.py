@@ -9,10 +9,12 @@ MainWindow が共有 QVideoSink を 1 つ接続し、そのフレームを
 WipeOverlay 群（プレビュー / 全画面ホスト / プレゼン窓）へ fan-out する。
 
 レイアウトは純関数 wipe_geometry() で計算する（Qt 不要・テスト可能）。
-バウンディングボックスは表示領域の半分×半分（面積約 1/4）で、動画の
+バウンディングボックスは表示領域の 1/√8 × 1/√8（面積約 1/8）で、動画の
 アスペクト比を維持して収める。余白は既定 16px。
 """
 from __future__ import annotations
+
+import math
 
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -33,8 +35,8 @@ def wipe_geometry(
 ) -> tuple[int, int, int, int]:
     """ワイプの矩形 (x, y, w, h) を返す純関数。
 
-    バウンディングボックスは (parent_w - 2*margin)/2 × (parent_h - 2*margin)/2
-    （面積は表示領域の約 1/4）。動画サイズが既知ならアスペクト比を維持して
+    バウンディングボックスは (parent_w - 2*margin)/√8 × (parent_h - 2*margin)/√8
+    （面積は表示領域の約 1/8）。動画サイズが既知ならアスペクト比を維持して
     収め、未知（0）ならボックスそのままを使う。corner は WIPE_CORNERS のいずれか
     （不正値は bottom_right 扱い）。
     """
@@ -42,8 +44,9 @@ def wipe_geometry(
         return (0, 0, 0, 0)
     avail_w = max(1, parent_w - 2 * margin)
     avail_h = max(1, parent_h - 2 * margin)
-    box_w = avail_w / 2.0
-    box_h = avail_h / 2.0
+    side = math.sqrt(8.0)  # 面積 1/8 = 一辺 1/√8（実機確認で 1/4 から縮小）
+    box_w = avail_w / side
+    box_h = avail_h / side
     if video_w > 0 and video_h > 0:
         scale = min(box_w / video_w, box_h / video_h)
         w = max(1, int(video_w * scale))

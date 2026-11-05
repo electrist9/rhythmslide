@@ -1,6 +1,7 @@
 """動画ワイプ表示のテスト（純粋な矩形計算 + offscreen GUI）。"""
 from __future__ import annotations
 
+import math
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -29,21 +30,26 @@ def test_corner_anchors():
     assert x == M and y + h == H - M
 
 
-def test_aspect_ratio_and_box_half():
-    """アスペクト比を維持し、バウンディングボックスは半分×半分（面積約 1/4）。"""
+def test_aspect_ratio_and_box_area_eighth():
+    """アスペクト比を維持し、バウンディングボックスは面積約 1/8（一辺 1/√8）。"""
     W, H = 1600, 900
     x, y, w, h = wipe_geometry(W, H, 1920, 1080, "bottom_right")
     assert abs(w / h - 1920 / 1080) < 0.01
-    box_w, box_h = (W - 2 * M) / 2, (H - 2 * M) / 2
+    side = math.sqrt(8.0)
+    box_w, box_h = (W - 2 * M) / side, (H - 2 * M) / side
     assert w <= box_w + 1 and h <= box_h + 1
-    assert w == box_w + 1 or h == pytest.approx(box_h, abs=1)  # 縦または横がボックスに接する
+    # 縦または横がボックスに接する
+    assert abs(w - box_w) < 1 or abs(h - box_h) < 1
+    # 1/4 時代（一辺半分）より明確に小さい
+    assert w < (W - 2 * M) / 2 and h < (H - 2 * M) / 2
 
 
 def test_unknown_video_size_uses_box():
     """動画サイズが未知（0）ならボックスそのままの矩形になる。"""
     W, H = 800, 600
     x, y, w, h = wipe_geometry(W, H, 0, 0, "bottom_right")
-    assert (w, h) == (int((W - 2 * M) / 2), int((H - 2 * M) / 2))
+    side = math.sqrt(8.0)
+    assert (w, h) == (int((W - 2 * M) / side), int((H - 2 * M) / side))
 
 
 def test_invalid_corner_falls_back_bottom_right():
