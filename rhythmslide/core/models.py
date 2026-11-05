@@ -199,6 +199,10 @@ def _opt_int(value: Any) -> Optional[int]:
         return None
 
 
+#: 動画ワイプ表示の位置指定（設定・メニュー・レイアウト計算で共通）
+WIPE_CORNERS: tuple[str, ...] = ("bottom_right", "bottom_left", "top_right", "top_left")
+
+
 @dataclass
 class Settings:
     """自動配置と描画の設定（計画書 7 章 settings）。"""
@@ -227,6 +231,10 @@ class Settings:
     funscript_step: float = 100.0
     #: 写真の循環順（"forward"=順送り / "pingpong"=往復）
     photo_order: str = "forward"
+    #: 動画ファイルを読み込んだとき、映像をスライドショー画面のすみへワイプ表示する
+    video_wipe: bool = False
+    #: ワイプの位置（"bottom_right" / "bottom_left" / "top_right" / "top_left"）
+    video_wipe_corner: str = "bottom_right"
     presentation: PresentationSettings = field(default_factory=PresentationSettings)
 
     def to_dict(self) -> dict[str, Any]:
@@ -244,6 +252,8 @@ class Settings:
             "funscript_threshold": float(self.funscript_threshold),
             "funscript_step": float(self.funscript_step),
             "photo_order": self.photo_order,
+            "video_wipe": bool(self.video_wipe),
+            "video_wipe_corner": self.video_wipe_corner,
             "presentation": self.presentation.to_dict(),
         }
 
@@ -271,6 +281,10 @@ class Settings:
             funscript_threshold=_nonneg_float(data.get("funscript_threshold"), 0.0),
             funscript_step=_positive_float(data.get("funscript_step"), 100.0),
             photo_order=_choice(data.get("photo_order"), ("forward", "pingpong"), "forward"),
+            video_wipe=bool(data.get("video_wipe", False)),
+            video_wipe_corner=_choice(
+                data.get("video_wipe_corner"), WIPE_CORNERS, "bottom_right"
+            ),
             presentation=PresentationSettings.from_dict(data.get("presentation")),
         )
 
