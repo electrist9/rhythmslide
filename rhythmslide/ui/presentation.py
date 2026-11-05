@@ -20,6 +20,7 @@ class PresentationWindow(QWidget):
     nextRequested = Signal()
     prevRequested = Signal()
     togglePauseRequested = Signal()
+    wipeToggleRequested = Signal()
 
     def __init__(self, cache: ImageCache, settings: PresentationSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -104,6 +105,9 @@ class PresentationWindow(QWidget):
             self.prevRequested.emit()
         elif key == Qt.Key.Key_Space:
             self.togglePauseRequested.emit()
+        elif key == Qt.Key.Key_V:
+            # 全画面ではメニューのショートカットが発火しないため橋渡しする
+            self.wipeToggleRequested.emit()
         else:
             super().keyPressEvent(event)
 
