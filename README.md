@@ -59,7 +59,7 @@ python -m rhythmslide project.rslide
 
 リリース用の **ポータブル版** は、インストール不要でそのまま動くフォルダを zip にまとめたものです（Python 不要・USB メモリでも動作）。
 
-- ファイル名: `RhythmSlide-<version>-win64.zip`（例: `RhythmSlide-1.0.0-win64.zip`）
+- ファイル名: `RhythmSlide-<version>-win64.zip`（例: `RhythmSlide-1.1.0-win64.zip`）
 - 中身: トップレベルに `rhythmslide` フォルダが1つ。その中に `rhythmslide.exe` と `_internal\`（依存 DLL・Qt・翻訳 `.qm`・同梱の `ffmpeg`/`ffprobe`）が入っています。
 
 手順:
@@ -166,11 +166,11 @@ onedir 版は `dist\rhythmslide\` フォルダに出力されます。これを�
 # dist\rhythmslide フォルダを zip 化（トップレベルに rhythmslide/ が入る）
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
-    "dist\rhythmslide", "dist\RhythmSlide-1.0.0-win64.zip",
+    "dist\rhythmslide", "dist\RhythmSlide-1.1.0-win64.zip",
     [System.IO.Compression.CompressionLevel]::Optimal, $true)
 ```
 
-`dist\rhythmslide\rhythmslide\data\` に `config.json` と `funscript_presets.json` を置いてから zip 化すると、初期設定とプリセットを同梱できます（配布用に、個人パスや外部制御の設定はサニタイズした既定値にすることをおすすめします）。
+`dist\rhythmslide\data\` に `config.json` と `funscript_presets.json` を置いてから zip 化すると、初期設定とプリセットを同梱できます（配布用に、個人パスや外部制御の設定はサニタイズした既定値にすることをおすすめします）。
 
 ## 実装上の注意（計画書からの変更点）
 

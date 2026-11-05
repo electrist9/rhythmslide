@@ -14,15 +14,15 @@
 
 | 項目 | 値 |
 |---|---|
-| バージョン | **1.0.0**（唯一の定義元: `rhythmslide/__init__.py` の `__version__`） |
-| ブランチ | `main`（HEAD = 動画ワイプ表示機能の `--no-ff` マージコミット。feature ブランチは削除済み） |
-| タグ | `v1.0.0`（annotated、`8f7c401`「バージョンを 1.0.0 に更新」を指す） |
-| リモート | `origin` = `https://github.com/electrist9/rhythmslide.git`（`main` は origin と同期済み） |
+| バージョン | **1.1.0**（唯一の定義元: `rhythmslide/__init__.py` の `__version__`） |
+| ブランチ | `main`（HEAD = `c82f8e5`「バージョンを 1.1.0 に更新」。feature ブランチは削除済み） |
+| タグ | `v1.0.0`（annotated、`8f7c401` を指す）、`v1.1.0`（annotated、`c82f8e5`「バージョンを 1.1.0 に更新」を指す） |
+| リモート | `origin` = `https://github.com/electrist9/rhythmslide.git`（`main` は `40de8f7` まで同期済み。`c82f8e5` とタグ `v1.1.0` は**未 push**、push はユーザーの手動運用） |
 | 作業ツリー | クリーン（`dist/`・`rhythmslide/data/`・`*.rslide`・`.venv/`・`PortableGit/` は gitignore 済み）。本 4 文書（PROJECT_STATE/ARCHITECTURE/DECISIONS/TODO）も git 管理済み |
 
-履歴（要約）: `d428740` 初回コミット（全ソース） → `71c6c82`/`8a1f935` `.rslide` 素の JSON 化 → `f86c9ae`/`f58a176` 多言語対応 → `8f7c401` v1.0.0 → `7f91631` README 便携版手順 → 動画ワイプ表示（feature/video-wipe-overlay → `--no-ff` マージ、2026-11-05）→ ワイプサイズメニュー（feature/video-wipe-size-menu → `--no-ff` マージ、2026-11-05）。機能ブランチはすべて `main` へマージ済み・削除済み。
+履歴（要約）: `d428740` 初回コミット（全ソース） → `71c6c82`/`8a1f935` `.rslide` 素の JSON 化 → `f86c9ae`/`f58a176` 多言語対応 → `8f7c401` v1.0.0 → `7f91631` README 便携版手順 → 動画ワイプ表示（feature/video-wipe-overlay → `--no-ff` マージ、2026-11-05）→ ワイプサイズメニュー（feature/video-wipe-size-menu → `--no-ff` マージ、2026-11-05）→ `c82f8e5` v1.1.0（tag `v1.1.0`）+ 便携 ZIP 再生成。機能ブランチはすべて `main` へマージ済み・削除済み。
 
-**注意**: `pyproject.toml` の `version` は `1.0.0` に修正済み（`__init__.py` と一致）。
+**注意**: `pyproject.toml` の `version` は `1.1.0` に更新済み（`__init__.py` と一致）。`packaging/installer.iss` の `MyAppVersion` も `1.1.0` に更新済み（未実行検証、TODO A2）。
 
 ## 3. 実装済み機能（すべて `main` に統合済み・ユーザー確認済み）
 
@@ -41,15 +41,15 @@
 - **FunScript 対応**: `.funscript` 読込で切替点そのものを使用。切替ルール 3 モード（上昇のみ/局所極値/累積移動距離）+ 振幅しきい値 + 累積ステップ + 循環順（順/往復）。同名 `.funscript` 自動検出（隣接 → 検索フォルダ複数・再帰）。**名前付きプリセット**を `funscript_presets.json` に保存、選択は `config.json` に記憶され起動時適用
 - **外部制御（VLC 互換 HTTP）**: 既定無効。ポート既定 8080、待ち受け既定 `127.0.0.1`（`0.0.0.0` で LAN 制御可）、パスワードで Basic 認証。MultiFunPlayer 対応
 - **多言語**: 日本語（既定）/ English / 中文。Qt `tr()` + `.ts`/`.qm` + `QTranslator`。**反映は再起動**。未設定時は OS ロケールから推定
-- 設定永続化: 編集メニュー 7 項目 + 前回フォルダ + RC 設定 + 言語 + プリセット選択 + **動画ワイプ（ON/OFF・位置）**を `config.json` に保存・起動時適用
+- 設定永続化: 編集メニュー 7 項目 + 前回フォルダ + RC 設定 + 言語 + プリセット選択 + **動画ワイプ（ON/OFF・位置・サイズ）**を `config.json` に保存・起動時適用
 
 ## 4. 成果物（`dist/`、gitignore 対象）
 
 | 成果物 | 状態 |
 |---|---|
-| `dist/RhythmSlide-1.0.0-win64.zip`（252,673,442 B ≒ 241 MB、271 エントリ） | **現行の便携 ZIP**。v1.0.0 + i18n + listen-address + JSON 化を反映。内部検証済み（トップレベル `rhythmslide/`、`rhythmslide.exe`、`_internal/bin/ffmpeg.exe`+`ffprobe.exe`、`_internal/locale/*.qm`、`rhythmslide/data/{config,funscript_presets}.json`）。同梱 `config.json` は**サニタイズ済み**（言語 ja・RC 無効・127.0.0.1） |
-| `dist/rhythmslide/` | onedir 出力フォルダ（便携 ZIP の材料。2026-10-24 ビルド） |
-| `dist/RhythmSlide-0.1.0-win64.zip` | **旧版（残置）**。削除可 |
+| `dist/RhythmSlide-1.1.0-win64.zip`（252,683,903 B ≒ 241 MB、271 エントリ） | **現行の便携 ZIP**（2026-11-05 ビルド）。v1.1.0 + 動画ワイプ表示（四隅・サイズ選択・V キー）を反映。内部検証済み（トップレベル `rhythmslide/`、`rhythmslide.exe`、`_internal/bin/ffmpeg.exe`+`ffprobe.exe`、`_internal/locale/*.qm`、`rhythmslide/data/{config,funscript_presets}.json`）。同梱 `config.json` は**サニタイズ済み**（言語 ja・RC 無効・127.0.0.1） |
+| `dist/rhythmslide/` | onedir 出力フォルダ（便携 ZIP の材料。2026-11-05 ビルド） |
+| `dist/RhythmSlide-1.0.0-win64.zip`（252,673,442 B ≒ 241 MB、271 エントリ） | **旧版（残置）**。v1.0.0 + i18n + listen-address + JSON 化を反映。内部検証済み |
 
 
 便携版の使い方・zip 化手順は `README.md`「ポータブル版（zip）の起動方法」「パッケージング」節に記載済み。
@@ -83,7 +83,7 @@ F:\testws\.venv\Scripts\python.exe -m pytest -p no:cacheprovider
 # 便携 ZIP 化（トップレベルに rhythmslide/ を含める）
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
-    "F:\testws\dist\rhythmslide", "F:\testws\dist\RhythmSlide-1.0.0-win64.zip",
+    "F:\testws\dist\rhythmslide", "F:\testws\dist\RhythmSlide-1.1.0-win64.zip",
     [System.IO.Compression.CompressionLevel]::Optimal, $true)
 
 # 翻訳更新（UI 文言変更後）

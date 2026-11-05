@@ -1,12 +1,12 @@
 # TODO.md — RhythmSlide 未了・技術的負債・拡張候補
 
-> 2026-11-05 時点。**ユーザーからの未対応依頼はゼロ**（v1.0.0 リリース・便携 ZIP 配布・README・動画ワイプ表示まで完了）。
+> 2026-11-05 時点。**ユーザーからの未対応依頼はゼロ**（v1.0.0 リリース・便携 ZIP 配布・README・動画ワイプ表示・v1.1.0 便携 ZIP 再生成まで完了）。
 > 以下は「未検証」「負債」「未合意の候補」であり、着手前に必ず `DECISIONS.md` を参照すること。
 
 ## A. 未検証・確認事項（優先度順）
 
 ### A1. ~~`pyproject.toml` の version が 0.1.0 のまま（1.0.0 にズレ）~~ ✅ 完了
-- 単一定義元は `rhythmslide/__init__.py` の `__version__ = "1.0.0"`（D15 系）。`pyproject.toml` L7 を `1.0.0` に更新済み。
+- 単一定義元は `rhythmslide/__init__.py` の `__version__`（現在 `1.1.0`、D15 系）。`pyproject.toml` L7 も常に追随して更新済み。
 
 ### A2. Inno Setup インストーラ（`packaging/installer.iss`）は一度も実行検証していない
 - 便携 ZIP が正式配布物。インストーラ版の要求は来ていないが、iss が現行 spec（locale datas・bin/ffmpeg・onedir）と整合したままか未確認。
@@ -27,7 +27,7 @@
 
 ### A7. ~~`dist/` の残骸整理~~ ✅ 完了
 - 削除済み: `dist/RhythmSlide-0.1.0-win64.zip`（旧版）、`dist/rhythmslide.exe`（onefile 実験残骸）。
-- 保持: `dist/RhythmSlide-1.0.0-win64.zip`（配布物）、`dist/rhythmslide/`（onedir 材料）。
+- 保持: `dist/RhythmSlide-1.1.0-win64.zip`（現行配布物）、`dist/RhythmSlide-1.0.0-win64.zip`（旧版）、`dist/rhythmslide/`（onedir 材料）。
 
 ## B. 実装の穴（意図的に未接続の部分）
 
@@ -56,6 +56,7 @@
 
 ## E. 直近の完了物（文脈用・これ以上の作業なし）
 
-- **動画ワイプ表示**（2026-11-05、D21 合意・実装）: 四隅オーバーレイ（共有 QVideoSink fan-out、V キー、メニュー、位置選択、サイズ 1/4・1/8・1/16 選択可で既定 1/8、永続化、HW デコード自動）。feature/video-wipe-overlay / feature/video-wipe-size-menu → `main` へ `--no-ff` マージ。便携 ZIP は**未再生成**（次回ビルド時に反映される）。
+- **動画ワイプ表示**（2026-11-05、D21 合意・実装）: 四隅オーバーレイ（共有 QVideoSink fan-out、V キー、メニュー、位置選択、サイズ 1/4・1/8・1/16 選択可で既定 1/8、永続化、HW デコード自動）。feature/video-wipe-overlay / feature/video-wipe-size-menu → `main` へ `--no-ff` マージ。実機確認済み。
+- **v1.1.0**（tag `v1.1.0` @ `c82f8e5`）、便携 ZIP `RhythmSlide-1.1.0-win64.zip`（2026-11-05 ビルド・中身検証済み。同梱 config.json はサニタイズ済み）。
 - v1.0.0（tag `v1.0.0` @ `8f7c401`）、便携 ZIP `RhythmSlide-1.0.0-win64.zip`（2026-10-24 ビルド・中身検証済み）、README 便携版手順（`7f91631`）。
 - 本 4 文書（`PROJECT_STATE.md` / `ARCHITECTURE.md` / `DECISIONS.md` / `TODO.md`）は 2026-10-31 作成。**git 管理済み**（docs ブランチ → `main` へ `--no-ff` マージ）。
