@@ -37,7 +37,7 @@ rhythmslide/
 | `ui/materialpanel.py` | 157 | 素材パネル（`PhotoListModel` の DisplayRole/ToolTipRole は**ユーザーデータなので翻訳しない**） |
 | `core/imagecache.py` | 145 | 実行時 QImage LRU キャッシュ。キー `(path, max_w, max_h, crop)` |
 | `core/thumbnails.py` | 132 | サムネイル永続化。**SQLite**（`thumbcache/thumbnails.db`、JPEG BLOB、WAL + `synchronous=NORMAL` + `check_same_thread=False` + `threading.RLock`）。`get()/ensure()` は JPEG **bytes** を返す |
-| `ui/videowipe.py` | 104 | 動画ワイプの隅オーバーレイ `WipeOverlay`（`QVideoWidget` 子。マウス透過・リサイズ追従）と純関数 `wipe_geometry()`（四隅・約 1/4・アスペクト比維持）。D21 |
+| `ui/videowipe.py` | 104 | 動画ワイプの隅オーバーレイ `WipeOverlay`（`QVideoWidget` 子。マウス透過・リサイズ追従）と純関数 `wipe_geometry()`（四隅・面積約 1/8・アスペクト比維持）。D21 |
 | `core/paths.py` | 106 | データ保存先解決（§6） |
 | `ui/commands.py` | 98 | タイムライン編集の Undo/Redo コマンド |
 | `ui/presentation.py` | 112 | プレゼン窓（F5。独立フルスクリーン、ディスプレイ選択。V キーで `wipeToggleRequested`） |
