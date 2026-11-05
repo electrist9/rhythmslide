@@ -92,3 +92,8 @@
 ## D20. サムネイルキャッシュは SQLite（JPEG BLOB）
 - **背景**: `thumbnail_sqlite_plan.md` による計画 → 実装。ファイル 1 枚 1 ファイル方式から DB 化。
 - **決定**: WAL + `synchronous=NORMAL` + `check_same_thread=False` + `RLock`。`get()/ensure()` は JPEG bytes を返し、QPixmap 化は呼び出し側。
+
+## D21. 動画ワイプ表示は共有 QVideoSink の fan-out による隅オーバーレイ（2026-11-05 合意・実装）
+- **背景**: 動画ファイル読み込み時に映像をスライドショー画面の**すみにワイプ表示**。要求は (1) メニュー/ホットキーで切り替え、(2) CPU 負荷をかけない、(3) ハードウェアデコーダーを使う。音声再生済みの `QMediaPlayer` は同一オブジェクトに映像出力を付けられる（付ければ音声クロックと自動で完全同期、追加の復号コストはゼロ）。
+- **決定**: 共有 `QVideoSink` に `player.setVideoOutput(sink)` し、`videoFrameChanged` から各 `WipeOverlay`（`ui/videowipe.py`、`QVideoWidget` の子。プレビュー/プレゼン窓に配置、F11 全画面はプレビュー子として自動追随）へ `videoSink().setVideoFrame(frame)` で fan-out（`QMediaPlayer` の映像出力は 1 本のみという Qt 制限への対策）。**OFF 時は `setVideoOutput(None)` で映像復号自体を停止**（ゼロコスト。再生中 ON/OFF も安全、実測検証済み）。HW デコードは Qt FFmpeg バックエンドの既定で自動選択（d3d11va 実測確認済み。上書きは `QT_FFMPEG_DECODING_HW_DEVICE_TYPES`）。
+- **UI**: 既定 OFF。ON 時はメニュー「動画ワイプ表示」と **V キー**で切り替え（ボーダーレス窓では keyPressEvent 橋渡し）。位置は右下/左下/右上/左上選択可、サイズは表示領域の約 1/4（アスペクト比維持、余白 16px）。ON/OFF と位置は `config.json` と `.rslide`（`Settings`）に永続化。音声のみファイルでは `hasVideo()` が False のためオーバーレイ非表示。

@@ -13,7 +13,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QKeyEvent, QKeySequence, QUndoStack
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QVideoSink
 from PySide6.QtNetwork import QHostAddress
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDockWidget,
@@ -31,7 +31,8 @@ from ..core.funscript import (
 )
 from ..core.imagecache import ImageCache
 from ..core.models import (
-    PresentationSettings, Project, RENDER_FPS_CHOICES, Settings, TRANSITION_TYPES, UNIT_BEATS_CHOICES,
+    PresentationSettings, Project, RENDER_FPS_CHOICES, Settings, TRANSITION_TYPES,
+    UNIT_BEATS_CHOICES, WIPE_CORNERS,
 )
 from ..core.projectstore import load_project, save_project, try_load_project
 from ..core.renderlogic import slide_at, total_duration
@@ -48,6 +49,7 @@ from .preview import PreviewWidget
 from .presentation import PresentationWindow
 from .rcserver import VlcControlServer
 from .timelineview import TimelineView
+from .videowipe import WipeOverlay
 from .workers import AnalysisWorker, EnrichWorker, ScanWorker, ThumbnailWorker
 
 log = logging.getLogger(__name__)
@@ -77,6 +79,17 @@ class MainWindow(QMainWindow):
         self.player.setAudioOutput(self.audio_out)
         self.player.errorOccurred.connect(self._on_media_error)
 
+        # --- 動画ワイプ表示 ----------------------------------------------
+        # 動画を読み込むと同じ QMediaPlayer が映像もデコードする（音声と完全同期、
+        # ハードウェアデコードは Qt の FFmpeg バックエンドが既定で自動選択）。
+        # 1 メディアに接続できる映像出力は 1 つだけなので共有 QVideoSink を接続し、
+        # フレームを各窓の WipeOverlay へ fan-out する。OFF にすると映像デコードは止まる。
+        self._wipe_sink = QVideoSink(self)
+        self._wipe_sink.videoFrameChanged.connect(self._on_wipe_frame)
+        self._wipe_overlays: list[WipeOverlay] = []
+        self._presentation_wipe: WipeOverlay | None = None
+        self._wipe_video_size: tuple[int, int] = (0, 0)
+
         # --- ウィジェット ------------------------------------------------
         self.preview = PreviewWidget(self.image_cache, self)
         self.timeline = TimelineView(self)
@@ -86,6 +99,15 @@ class MainWindow(QMainWindow):
         self._apply_persisted_settings()
         # 記憶した FunScript プリセット選択を既定ルールへ反映（プロジェクト読込後はそちらが優先）
         self._apply_persisted_funscript_preset()
+
+        # プレビューの動画ワイプ（プレビューの子ウィジェットなので
+        # F11 全画面での再親付けに自動的に追随する）
+        self._preview_wipe = WipeOverlay(
+            self.preview, self.project.settings.video_wipe_corner
+        )
+        self._wipe_overlays.append(self._preview_wipe)
+        if self.project.settings.video_wipe:
+            self.player.setVideoOutput(self._wipe_sink)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self.preview)
@@ -210,6 +232,28 @@ class MainWindow(QMainWindow):
         self._act(m_play, self.tr("プレゼン開始"), self.start_presentation, "F5")
         m_play.addSeparator()
         self._act(m_play, self.tr("画像を全画面表示 / 戻す"), self._toggle_preview_fullscreen, "F11")
+        m_play.addSeparator()
+        # 動画ワイプ表示（V で切替 / 位置はサブメニューから）
+        self._act_wipe = self._act(
+            m_play, self.tr("動画ワイプ表示"), self.toggle_video_wipe, Qt.Key.Key_V
+        )
+        self._act_wipe.setCheckable(True)
+        self._act_wipe.setChecked(self.project.settings.video_wipe)
+        self._wipe_corner_menu = m_play.addMenu(self.tr("ワイプの位置"))
+        corner_labels = {
+            "bottom_right": self.tr("右下"),
+            "bottom_left": self.tr("左下"),
+            "top_right": self.tr("右上"),
+            "top_left": self.tr("左上"),
+        }
+        self._wipe_corner_actions: list[QAction] = []
+        for corner in WIPE_CORNERS:
+            act = self._wipe_corner_menu.addAction(corner_labels.get(corner, corner))
+            act.setCheckable(True)
+            act.setData(corner)  # 正規値（言語非依存）
+            act.setChecked(corner == self.project.settings.video_wipe_corner)
+            act.triggered.connect(lambda checked, c=corner: self._change_wipe_corner(c))
+            self._wipe_corner_actions.append(act)
 
         m_tools = bar.addMenu(self.tr("ツール"))
         self._act(m_tools, self.tr("外部制御（VLC 互換）…"), self.configure_remote_control)
@@ -348,6 +392,8 @@ class MainWindow(QMainWindow):
         # MultiFunPlayer が playlist.json を再取得するようにする。
         self._rc_path = str(path)
         self._rc_plid += 1
+        # 新しいメディアの動画サイズはまだ不明（LoadedMedia で再取得）
+        self._wipe_video_size = (0, 0)
         self.player.setSource(_url(path))
         worker = AnalysisWorker(path, self.beat_cache)
         worker.signals.step.connect(self.statusBar().showMessage)
@@ -777,6 +823,76 @@ class MainWindow(QMainWindow):
             self._presentation.renderer.set_background_mode(ps.background_mode)
         self.preview.update()
 
+    # ==================================================================
+    # 動画ワイプ表示
+    # ==================================================================
+    def toggle_video_wipe(self) -> None:
+        """V キー・メニューから動画ワイプ表示の ON/OFF を切り替える。"""
+        self._set_video_wipe(not self.project.settings.video_wipe)
+
+    def _set_video_wipe(self, on: bool) -> None:
+        s = self.project.settings
+        s.video_wipe = bool(on)
+        if s.video_wipe:
+            # 共有シンクを接続すると映像デコードが始まる（HW デコードは自動選択、
+            # 音声クロックと同じ QMediaPlayer なので同期は完全）。
+            self.player.setVideoOutput(self._wipe_sink)
+        else:
+            # 出力を外すと映像デコードだけが止まる（音声・再生位置は影響なし）。
+            self.player.setVideoOutput(None)
+        self._update_wipe_visibility()
+        self._act_wipe.setChecked(s.video_wipe)
+        self.statusBar().showMessage(
+            fmt(self.tr("動画ワイプ表示: %1"), "ON" if s.video_wipe else "OFF")
+        )
+
+    def _update_wipe_visibility(self) -> None:
+        """設定 ON かつ現在のメディアに映像があるときだけオーバーレイを見せる。"""
+        show = bool(self.project.settings.video_wipe) and self.player.hasVideo()
+        for w in self._wipe_overlays:
+            w.setVisible(show)
+
+    def _change_wipe_corner(self, corner: str) -> None:
+        """ワイプの位置（四隅）を変える。OFF でも設定として記憶する。"""
+        if corner not in WIPE_CORNERS:
+            return
+        self.project.settings.video_wipe_corner = corner
+        for act in self._wipe_corner_actions:
+            act.setChecked(act.data() == corner)
+        for w in self._wipe_overlays:
+            w.set_corner(corner)
+
+    def _on_wipe_frame(self, frame) -> None:
+        """共有 QVideoSink へ届いたフレームを各窓のオーバーレイへ fan-out する。
+
+        1 メディアに接続できる映像出力は 1 つだけなので、シンク 1 本で
+        プレビュー / F11 全画面 / F5 プレゼンをまとめて供給する。
+        """
+        if not self._wipe_overlays:
+            return
+        if self._wipe_video_size == (0, 0):
+            vw, vh = frame.width(), frame.height()
+            if vw > 0 and vh > 0:
+                self._wipe_video_size = (vw, vh)
+                for w in self._wipe_overlays:
+                    w.set_video_size(vw, vh)
+        for w in self._wipe_overlays:
+            w.videoSink().setVideoFrame(frame)
+
+    def _refresh_wipe_video_size(self) -> None:
+        """メディア読込後、メタデータから動画サイズを覚えてワイプの可視性を更新。"""
+        md = self.player.metaData()
+        try:
+            vw = int(md.value(QMediaMetaData.Key.VideoWidth) or 0)
+            vh = int(md.value(QMediaMetaData.Key.VideoHeight) or 0)
+        except (TypeError, ValueError):
+            vw = vh = 0
+        if vw > 0 and vh > 0:
+            self._wipe_video_size = (vw, vh)
+            for w in self._wipe_overlays:
+                w.set_video_size(vw, vh)
+        self._update_wipe_visibility()
+
     def _reshuffle_photos(self) -> None:
         """random_order が有効なら写真順をシャッフルして再レイアウトする。"""
         if not self.project.settings.random_order or len(self.project.photos) < 2:
@@ -814,6 +930,9 @@ class MainWindow(QMainWindow):
         self.timeline.set_playhead(t)
 
     def _on_media_status(self, status) -> None:
+        if status == QMediaPlayer.MediaStatus.LoadedMedia:
+            # 読み込み完了で hasVideo / 動画サイズが確定 → ワイプを反映
+            self._refresh_wipe_video_size()
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             total = total_duration(self.slides)
             if self.project.settings.presentation.loop and total > 0:
@@ -904,6 +1023,14 @@ class MainWindow(QMainWindow):
         self._presentation.nextRequested.connect(lambda: self._step(1))
         self._presentation.prevRequested.connect(lambda: self._step(-1))
         self._presentation.togglePauseRequested.connect(self.toggle_play)
+        self._presentation.wipeToggleRequested.connect(self.toggle_video_wipe)
+        # プレゼン窓にもワイプを重ねる（共有シンクからの fan-out 対象に追加）
+        pw = WipeOverlay(self._presentation, self.project.settings.video_wipe_corner)
+        if self._wipe_video_size != (0, 0):
+            pw.set_video_size(*self._wipe_video_size)
+        pw.setVisible(self.project.settings.video_wipe and self.player.hasVideo())
+        self._presentation_wipe = pw
+        self._wipe_overlays.append(pw)
         self._presentation.show_on_screen(ps.monitor)
 
         start_t = 0.0
@@ -918,6 +1045,11 @@ class MainWindow(QMainWindow):
 
     def _close_presentation(self) -> None:
         if self._presentation is not None:
+            # ワイプの fan-out 対象から外す（オーバーレイは窓とともに破棄）
+            if self._presentation_wipe is not None:
+                if self._presentation_wipe in self._wipe_overlays:
+                    self._wipe_overlays.remove(self._presentation_wipe)
+                self._presentation_wipe = None
             self._presentation.deleteLater()
             self._presentation = None
         if self._sleep_guard is not None:
@@ -940,7 +1072,7 @@ class MainWindow(QMainWindow):
             return
         host = _FullscreenPreviewHost(
             self._toggle_preview_fullscreen, self._exit_preview_fullscreen,
-            self.toggle_play, self.play_from_start,
+            self.toggle_play, self.play_from_start, self.toggle_video_wipe,
         )
         layout = QVBoxLayout(host)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1272,6 +1404,10 @@ class MainWindow(QMainWindow):
         # 余白を画像の支配色にする
         mode = str(d.get("background_mode", s.presentation.background_mode))
         s.presentation.background_mode = mode if mode in ("solid", "dominant") else "solid"
+        # 動画ワイプ表示（ON/OFF と位置。位置が不正なら既定の右下）
+        s.video_wipe = bool(d.get("video_wipe", s.video_wipe))
+        corner = str(d.get("video_wipe_corner", s.video_wipe_corner))
+        s.video_wipe_corner = corner if corner in WIPE_CORNERS else "bottom_right"
         # プレビューの背景モードにも反映（プレゼン窓は未生成なので起動時は不要）
         self.preview.set_background_mode(s.presentation.background_mode)
 
@@ -1306,6 +1442,8 @@ class MainWindow(QMainWindow):
             "random_order": bool(s.random_order),
             "random_transition": bool(s.random_transition),
             "background_mode": s.presentation.background_mode,
+            "video_wipe": bool(s.video_wipe),
+            "video_wipe_corner": s.video_wipe_corner,
         }
         appconfig.save(self._config)
 
@@ -1331,12 +1469,13 @@ class _FullscreenPreviewHost(QWidget):
     プレビュー本体を一時的にこの窓へ再親付けして全画面表示する。F11 / Esc、または
     窓自体を閉じた時に呼び出し元（MainWindow）のトグルを呼んで通常表示へ戻る。
     全画面中は MainWindow が隠れるためメニューのショートカットが発火しないので、
-    Space（再生/一時停止）と Home（最初から再生）もここで橋渡しする。
+    Space（再生/一時停止）と Home（最初から再生）、V（動画ワイプ表示）も
+    ここで橋渡しする。
     プレゼン窓と同様にマウスカーソルは隠す（BlankCursor）。
     """
 
     def __init__(
-        self, on_toggle, on_close, on_play_pause, on_restart,
+        self, on_toggle, on_close, on_play_pause, on_restart, on_wipe_toggle,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -1344,6 +1483,7 @@ class _FullscreenPreviewHost(QWidget):
         self._on_close = on_close
         self._on_play_pause = on_play_pause
         self._on_restart = on_restart
+        self._on_wipe_toggle = on_wipe_toggle
         self.setWindowTitle(self.tr("RhythmSlide 画像表示"))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         # 全画面中はカーソルを隠す（プレビューは明示カーソルを持たないので継承する）
@@ -1356,6 +1496,8 @@ class _FullscreenPreviewHost(QWidget):
             self._on_play_pause()
         elif event.key() == Qt.Key.Key_Home:
             self._on_restart()
+        elif event.key() == Qt.Key.Key_V:
+            self._on_wipe_toggle()
         else:
             super().keyPressEvent(event)
 
