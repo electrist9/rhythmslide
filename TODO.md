@@ -57,6 +57,6 @@
 ## E. 直近の完了物（文脈用・これ以上の作業なし）
 
 - **動画ワイプ表示**（2026-11-05、D21 合意・実装）: 四隅オーバーレイ（共有 QVideoSink fan-out、V キー、メニュー、位置選択、サイズ 1/4・1/8・1/16 選択可で既定 1/8、永続化、HW デコード自動）。feature/video-wipe-overlay / feature/video-wipe-size-menu → `main` へ `--no-ff` マージ。実機確認済み。
-- **v1.1.0**（tag `v1.1.0` @ `c82f8e5`）、便携 ZIP `RhythmSlide-1.1.0-win64.zip`（2026-11-05 ビルド・中身検証済み。同梱 config.json はサニタイズ済み）。
+- **v1.1.0**（tag `v1.1.0` @ `c82f8e5`、push 済み）、便携 ZIP `RhythmSlide-1.1.0-win64.zip`（2026-11-05 ビルド・中身検証済み・GitHub リリース公開済み。同梱 config.json はサニタイズ済み）。
 - v1.0.0（tag `v1.0.0` @ `8f7c401`）、便携 ZIP `RhythmSlide-1.0.0-win64.zip`（2026-10-24 ビルド・中身検証済み）、README 便携版手順（`7f91631`）。
 - 本 4 文書（`PROJECT_STATE.md` / `ARCHITECTURE.md` / `DECISIONS.md` / `TODO.md`）は 2026-10-31 作成。**git 管理済み**（docs ブランチ → `main` へ `--no-ff` マージ）。
