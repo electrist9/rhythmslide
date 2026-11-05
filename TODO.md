@@ -1,6 +1,6 @@
 # TODO.md — RhythmSlide 未了・技術的負債・拡張候補
 
-> 2026-10-31 時点。**ユーザーからの未対応依頼はゼロ**（v1.0.0 リリース・便携 ZIP 配布・README まで完了）。
+> 2026-11-05 時点。**ユーザーからの未対応依頼はゼロ**（v1.0.0 リリース・便携 ZIP 配布・README・動画ワイプ表示まで完了）。
 > 以下は「未検証」「負債」「未合意の候補」であり、着手前に必ず `DECISIONS.md` を参照すること。
 
 ## A. 未検証・確認事項（優先度順）
@@ -15,9 +15,9 @@
 ### A3. ~~`packaging/rhythmslide_onefile.spec` は最近の再ビルドで検証していない~~ ✅ 完了（不採用により削除）
 - onedir 構成を採用しているため onefile は不採用。`packaging/rhythmslide_onefile.spec` および `build/rhythmslide_onefile/` を削除済み。
 
-### A4. pytest 全スイートを通常環境で実行していない
-- 開発サンドボックスでは pytest-qt の tmp_path 作成が PermissionError になる（環境制約。コード不具合ではないと確認済み）。テストコード自体は存在し、主要ロジックはインライン検証済み。
-- 通常端末で: `$env:QT_QPA_PLATFORM="offscreen"; .venv\Scripts\python.exe -m pytest -p no:cacheprovider`
+### A4. ~~pytest 全スイートを通常環境で実行していない~~ ✅ 完了
+- 2026-11-05 にサンドボックス外（通常権限）で全スイート実行し **147 件全通過**（動画ワイプ表示のテスト含む）。
+- 原因メモ: サンドボックス内失敗は pytest が一時ディレクトリを `mode=0o700`（厳格権限）で作るためファイル監視が配下を読めなくなる環境側の衝突。コード不具合ではないと確認済み。
 
 ### A5. GUI の実機マニュアル QA をこの環境では行っていない
 - offscreen 検証とスモークのみ。フルスクリーン（F11）・プレゼン窓（F5）・マルチディスプレイ・RC の LAN 実機（MultiFunPlayer 実接続）・実写真での支配色塗りはユーザー環境での確認に依存。バグ報告があれば `ui/mainwindow.py` の該当ハンドラから当たること。
@@ -56,5 +56,6 @@
 
 ## E. 直近の完了物（文脈用・これ以上の作業なし）
 
+- **動画ワイプ表示**（2026-11-05、D21 合意・実装）: 四隅オーバーレイ（共有 QVideoSink fan-out、V キー、メニュー、位置選択、永続化、HW デコード自動）。feature/video-wipe-overlay → `main` へ `--no-ff` マージ。便携 ZIP は**未再生成**（次回ビルド時に反映される）。
 - v1.0.0（tag `v1.0.0` @ `8f7c401`）、便携 ZIP `RhythmSlide-1.0.0-win64.zip`（2026-10-24 ビルド・中身検証済み）、README 便携版手順（`7f91631`）。
 - 本 4 文書（`PROJECT_STATE.md` / `ARCHITECTURE.md` / `DECISIONS.md` / `TODO.md`）は 2026-10-31 作成。**git 管理済み**（docs ブランチ → `main` へ `--no-ff` マージ）。
