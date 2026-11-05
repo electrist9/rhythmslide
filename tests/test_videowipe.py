@@ -8,8 +8,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 
-from rhythmslide.core.models import Settings, WIPE_CORNERS
-from rhythmslide.ui.videowipe import WIPE_MARGIN_PX, wipe_geometry
+from rhythmslide.core.models import Settings, WIPE_CORNERS, WIPE_SIZES
+from rhythmslide.ui.videowipe import (
+    WIPE_MARGIN_PX,
+    wipe_geometry,
+    wipe_size_denom,
+)
 
 M = WIPE_MARGIN_PX
 
@@ -70,6 +74,31 @@ def test_tiny_parent_stays_positive():
     assert x >= 0 and y >= 0 and x + w <= 20 and y + h <= 20
 
 
+def test_size_denoms_area_quarter_eighth_sixteenth():
+    """size_denom 4/8/16 でバウンディングボックスの面積が表示領域の 1/4・1/8・1/16。"""
+    W, H = 1600, 900
+    assert set(WIPE_SIZES) == {"1/4", "1/8", "1/16"}
+    for denom in (4, 8, 16):
+        x, y, w, h = wipe_geometry(
+            W, H, 0, 0, "bottom_right", size_denom=denom
+        )
+        side = math.sqrt(denom)
+        assert (w, h) == (int((W - 2 * M) / side), int((H - 2 * M) / side))
+    # 既定（指定なし）は 1/8 と同じ
+    assert wipe_geometry(W, H, 0, 0, "bottom_right") == wipe_geometry(
+        W, H, 0, 0, "bottom_right", size_denom=8
+    )
+
+
+def test_wipe_size_denom_mapping():
+    """サイズ指定 → 面積分母。不正値は 8（= 1/8）へフォールバック。"""
+    assert wipe_size_denom("1/4") == 4
+    assert wipe_size_denom("1/8") == 8
+    assert wipe_size_denom("1/16") == 16
+    assert wipe_size_denom("bogus") == 8
+    assert wipe_size_denom("") == 8
+
+
 # ======================================================================
 # 設定の永続化（.rslide 用の to_dict / from_dict）
 # ======================================================================
@@ -77,16 +106,19 @@ def test_settings_defaults():
     s = Settings()
     assert s.video_wipe is False
     assert s.video_wipe_corner == "bottom_right"
+    assert s.video_wipe_size == "1/8"
 
 
 def test_settings_roundtrip():
-    s = Settings(video_wipe=True, video_wipe_corner="top_left")
+    s = Settings(video_wipe=True, video_wipe_corner="top_left", video_wipe_size="1/16")
     d = s.to_dict()
     assert d["video_wipe"] is True
     assert d["video_wipe_corner"] == "top_left"
+    assert d["video_wipe_size"] == "1/16"
     s2 = Settings.from_dict(d)
     assert s2.video_wipe is True
     assert s2.video_wipe_corner == "top_left"
+    assert s2.video_wipe_size == "1/16"
 
 
 def test_settings_from_dict_invalid_corner():
@@ -96,6 +128,12 @@ def test_settings_from_dict_invalid_corner():
     assert set(WIPE_CORNERS) == {
         "bottom_right", "bottom_left", "top_right", "top_left",
     }
+
+
+def test_settings_from_dict_invalid_size():
+    """不正なサイズ指定は既定の 1/8 へフォールバック。"""
+    s = Settings.from_dict({"video_wipe_size": "1/2"})
+    assert s.video_wipe_size == "1/8"
 
 
 # ======================================================================
@@ -116,6 +154,7 @@ def test_wipe_defaults(main_window):
     w = main_window
     assert w.project.settings.video_wipe is False
     assert w.project.settings.video_wipe_corner == "bottom_right"
+    assert w.project.settings.video_wipe_size == "1/8"
     # プレビューの子として配置され、既定では非表示
     assert w._preview_wipe.parent() is w.preview
     assert not w._preview_wipe.isVisible()
@@ -145,11 +184,25 @@ def test_corner_menu_selection(main_window):
     assert w.project.settings.video_wipe_corner == "top_left"
 
 
+def test_size_menu_selection(main_window):
+    w = main_window
+    w._change_wipe_size("1/4")
+    assert w.project.settings.video_wipe_size == "1/4"
+    assert w._preview_wipe._size_denom == 4
+    checked = [a for a in w._wipe_size_actions if a.isChecked()]
+    assert len(checked) == 1 and checked[0].data() == "1/4"
+    w._change_wipe_size("bogus")  # 不正値は無視
+    assert w.project.settings.video_wipe_size == "1/4"
+    w._change_wipe_size("1/8")
+    assert w._preview_wipe._size_denom == 8
+
+
 def test_wipe_state_persisted_on_close(main_window, tmp_path):
-    """終了時に保存 → 次回起動時に ON / 位置が復元される（要件 1）。"""
+    """終了時に保存 → 次回起動時に ON / 位置 / サイズが復元される（要件 1）。"""
     w = main_window
     w.toggle_video_wipe()
     w._change_wipe_corner("top_right")
+    w._change_wipe_size("1/16")
     w.close()
 
     from rhythmslide.ui.mainwindow import MainWindow
@@ -158,8 +211,10 @@ def test_wipe_state_persisted_on_close(main_window, tmp_path):
     try:
         assert w2.project.settings.video_wipe is True
         assert w2.project.settings.video_wipe_corner == "top_right"
+        assert w2.project.settings.video_wipe_size == "1/16"
         assert w2._act_wipe.isChecked()
         assert w2._preview_wipe._corner == "top_right"
+        assert w2._preview_wipe._size_denom == 16
     finally:
         w2.close()
 

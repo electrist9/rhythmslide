@@ -23,8 +23,8 @@ rhythmslide/
 
 | モジュール | 行数 | 役割 |
 |---|---:|---|
-| `ui/mainwindow.py` | 1470 | 全 UI の中心。メニュー/ツールバー、再生制御（QMediaPlayer + 描画タイマ）、F11 全画面ホスト（`_FullscreenPreviewHost`）、RC 制御（`_RcController`）、動画ワイプ（共有 QVideoSink の fan-out 管理）、言語メニュー、プリセット管理、設定永続化 |
-| `core/models.py` | 419 | `Project/PhotoItem/Slide/Settings` dataclass + `to_dict/from_dict`。`PROJECT_VERSION=1`、`TRANSITION_TYPES`(8 種)、`UNIT_BEATS_CHOICES=("auto",0.5,1,2,4,8,16)`、`RENDER_FPS_CHOICES=(30,60,144)`、`WIPE_CORNERS`(四隅) |
+| `ui/mainwindow.py` | 1576 | 全 UI の中心。メニュー/ツールバー、再生制御（QMediaPlayer + 描画タイマ）、F11 全画面ホスト（`_FullscreenPreviewHost`）、RC 制御（`_RcController`）、動画ワイプ（共有 QVideoSink の fan-out 管理）、言語メニュー、プリセット管理、設定永続化 |
+| `core/models.py` | 461 | `Project/PhotoItem/Slide/Settings` dataclass + `to_dict/from_dict`。`PROJECT_VERSION=1`、`TRANSITION_TYPES`(8 種)、`UNIT_BEATS_CHOICES=("auto",0.5,1,2,4,8,16)`、`RENDER_FPS_CHOICES=(30,60,144)`、`WIPE_CORNERS`(四隅)、`WIPE_SIZES=("1/4","1/8","1/16")` |
 | `core/beatmapper.py` | 320 | レイアウト生成本体。ビートグリッド→スライド割当（unit 半拍既定）、過不足の間引き/循環、循環順（順/往復）、ランダム順、固定間隔 1.75s フォールバック、FunScript 切替点の採用 |
 | `ui/timelineview.py` | 261 | タイムライン描画・編集（移動/伸縮/ロック）、**再生中の自動横スクロール追従** |
 | `core/analyzer.py` | 249 | **純 numpy 解析**: onset（スペクトルフラックス）→ 自己相関テンポ → ビートグリッド → 信頼度 → RMS エネルギー。librosa 不使用 |
@@ -37,7 +37,7 @@ rhythmslide/
 | `ui/materialpanel.py` | 157 | 素材パネル（`PhotoListModel` の DisplayRole/ToolTipRole は**ユーザーデータなので翻訳しない**） |
 | `core/imagecache.py` | 145 | 実行時 QImage LRU キャッシュ。キー `(path, max_w, max_h, crop)` |
 | `core/thumbnails.py` | 132 | サムネイル永続化。**SQLite**（`thumbcache/thumbnails.db`、JPEG BLOB、WAL + `synchronous=NORMAL` + `check_same_thread=False` + `threading.RLock`）。`get()/ensure()` は JPEG **bytes** を返す |
-| `ui/videowipe.py` | 104 | 動画ワイプの隅オーバーレイ `WipeOverlay`（`QVideoWidget` 子。マウス透過・リサイズ追従）と純関数 `wipe_geometry()`（四隅・面積約 1/8・アスペクト比維持）。D21 |
+| `ui/videowipe.py` | 147 | 動画ワイプの隅オーバーレイ `WipeOverlay`（`QVideoWidget` 子。マウス透過・リサイズ追従・サイズ変更可）と純関数 `wipe_geometry()` / `wipe_size_denom()`（四隅・面積 1/4・1/8・1/16 選択可で既定 1/8・アスペクト比維持）。D21 |
 | `core/paths.py` | 106 | データ保存先解決（§6） |
 | `ui/commands.py` | 98 | タイムライン編集の Undo/Redo コマンド |
 | `ui/presentation.py` | 112 | プレゼン窓（F5。独立フルスクリーン、ディスプレイ選択。V キーで `wipeToggleRequested`） |
@@ -91,7 +91,7 @@ rhythmslide/
 ## 7. 永続化フォーマット
 
 - **`.rslide`（`PROJECT_EXTENSION`）**: 保存は**素の JSON**（UTF-8, `ensure_ascii=False, indent=2`、一時ファイル→`replace()` のアトミック書換）。読込は magic `b"RSLD1"`（旧 zlib 圧縮）を判別して解凍、Otherwise JSON。**拡張子は不変**。`models.PROJECT_VERSION=1`。
-- **`config.json`**（`core/appconfig.py`）: フラット dict。キー: `photo_dir` / `audio_dir` / `funscript_dir` / `funscript_search_dirs`(list) / `project_dir` / `rc_enabled` / `rc_port` / `rc_address`(既定 `"127.0.0.1"`) / `rc_password` / `funscript_preset`(選択名) / `language` / `settings`(ネスト dict: `unit_beats, transition, transition_ms, render_fps, random_order, random_transition, background_mode, video_wipe, video_wipe_corner`)。読込失敗時は空 dict で継続。
+- **`config.json`**（`core/appconfig.py`）: フラット dict。キー: `photo_dir` / `audio_dir` / `funscript_dir` / `funscript_search_dirs`(list) / `project_dir` / `rc_enabled` / `rc_port` / `rc_address`(既定 `"127.0.0.1"`) / `rc_password` / `funscript_preset`(選択名) / `language` / `settings`(ネスト dict: `unit_beats, transition, transition_ms, render_fps, random_order, random_transition, background_mode, video_wipe, video_wipe_corner, video_wipe_size`)。読込失敗時は空 dict で継続。
 - **`funscript_presets.json`**: プリセット list。要素スキーマは `{name, mode, threshold, step, order}` のみ（config.json とは**分離**が決定済み）。
 - **`beatcache/*.json`**: 解析結果キャッシュ（音声ファイル単位）。**`thumbcache/thumbnails.db`**: SQLite（§2）。
 
@@ -105,7 +105,7 @@ rhythmslide/
 
 ## 9. 多言語（方式 A 確定）
 
-- 仕組み: 全 UI 文言は `self.tr("日本語")`。`pyside6-lupdate` → `rhythmslide/locale/rhythmslide_{en,zh}.ts`（135 文字列、翻訳済み・unfinished 0）→ `pyside6-lrelease` → `.qm`（コミット済み）。`app.py` で `QTranslator` を `QApplication` 生成後・`MainWindow()` 前に install。
+- 仕組み: 全 UI 文言は `self.tr("日本語")`。`pyside6-lupdate` → `rhythmslide/locale/rhythmslide_{en,zh}.ts`（136 文字列、翻訳済み・unfinished 0）→ `pyside6-lrelease` → `.qm`（コミット済み）。`app.py` で `QTranslator` を `QApplication` 生成後・`MainWindow()` 前に install。
 - **反映は言語保存＋アプリ再起動**（ホットスワップ不可と決定済み）。言語メニューはツールメニュー。既定 ja、未設定は `QLocale.system()` から推定。
 - **PySide6 の `tr()` は Python `str` を返す（`.arg()` は存在しない）**。プレースホルダは `i18n.fmt(self.tr("…%1…"), value)` で `%1,%2,…` を順に置換（mainwindow 18 箇所・materialpanel 2 箇所が `fmt()` 変換済み。`ui/` 配下に `.arg(` はゼロ）。
 - `locale_dir()`: frozen 時 `sys._MEIPASS/locale`（spec の `datas` で `_internal/locale/` に同梱）、開発時 `rhythmslide/locale`。

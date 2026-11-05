@@ -9,8 +9,9 @@ MainWindow が共有 QVideoSink を 1 つ接続し、そのフレームを
 WipeOverlay 群（プレビュー / 全画面ホスト / プレゼン窓）へ fan-out する。
 
 レイアウトは純関数 wipe_geometry() で計算する（Qt 不要・テスト可能）。
-バウンディングボックスは表示領域の 1/√8 × 1/√8（面積約 1/8）で、動画の
-アスペクト比を維持して収める。余白は既定 16px。
+バウンディングボックスは表示領域の面積 1/4 / 1/8 / 1/16（既定 1/8、メニューで
+選択可）で一辺はその平方根の逆数倍とし、動画のアスペクト比を維持して収める。
+余白は既定 16px。
 """
 from __future__ import annotations
 
@@ -19,10 +20,23 @@ import math
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtMultimediaWidgets import QVideoWidget
 
-from ..core.models import WIPE_CORNERS
+from ..core.models import WIPE_CORNERS, WIPE_SIZES
 
 #: ワイプと表示領域の端との余白（px）
 WIPE_MARGIN_PX = 16
+
+#: サイズ指定が不正なときの面積分母（= 1/8）
+DEFAULT_WIPE_SIZE_DENOM = 8
+
+
+def wipe_size_denom(size: str) -> int:
+    """サイズ指定（"1/4" / "1/8" / "1/16"）を表示領域の面積分母へ変換する。
+
+    不正値は既定（1/8 → 8）へフォールバックする。
+    """
+    if size not in WIPE_SIZES:
+        return DEFAULT_WIPE_SIZE_DENOM
+    return int(size.split("/")[1])
 
 
 def wipe_geometry(
@@ -32,19 +46,21 @@ def wipe_geometry(
     video_h: int,
     corner: str,
     margin: int = WIPE_MARGIN_PX,
+    size_denom: int = DEFAULT_WIPE_SIZE_DENOM,
 ) -> tuple[int, int, int, int]:
     """ワイプの矩形 (x, y, w, h) を返す純関数。
 
-    バウンディングボックスは (parent_w - 2*margin)/√8 × (parent_h - 2*margin)/√8
-    （面積は表示領域の約 1/8）。動画サイズが既知ならアスペクト比を維持して
-    収め、未知（0）ならボックスそのままを使う。corner は WIPE_CORNERS のいずれか
-    （不正値は bottom_right 扱い）。
+    バウンディングボックスは (parent_w - 2*margin)/√denom × (parent_h - 2*margin)/√denom
+    （面積は表示領域の 1/denom。denom は 4 / 8 / 16、既定 8）。動画サイズが既知なら
+    アスペクト比を維持して収め、未知（0）ならボックスそのままを使う。corner は
+    WIPE_CORNERS のいずれか（不正値は bottom_right 扱い）。
     """
     if parent_w <= 0 or parent_h <= 0:
         return (0, 0, 0, 0)
     avail_w = max(1, parent_w - 2 * margin)
     avail_h = max(1, parent_h - 2 * margin)
-    side = math.sqrt(8.0)  # 面積 1/8 = 一辺 1/√8（実機確認で 1/4 から縮小）
+    denom = size_denom if size_denom > 0 else DEFAULT_WIPE_SIZE_DENOM
+    side = math.sqrt(float(denom))  # 面積 1/denom = 一辺 1/√denom
     box_w = avail_w / side
     box_h = avail_h / side
     if video_w > 0 and video_h > 0:
@@ -76,10 +92,12 @@ class WipeOverlay(QVideoWidget):
         parent,
         corner: str = "bottom_right",
         margin: int = WIPE_MARGIN_PX,
+        size: str = "1/8",
     ) -> None:
         super().__init__(parent)
         self._corner = corner if corner in WIPE_CORNERS else "bottom_right"
         self._margin = margin
+        self._size_denom = wipe_size_denom(size)
         self._video_w = 0
         self._video_h = 0
         # クリックを下のウィジェットへ渡す（ワイプ自体は操作しない）
@@ -93,6 +111,13 @@ class WipeOverlay(QVideoWidget):
         """ワイプの位置を変えて再配置する。"""
         if corner in WIPE_CORNERS:
             self._corner = corner
+            self._reposition()
+
+    def set_size(self, size: str) -> None:
+        """ワイプのサイズ（面積比 "1/4" / "1/8" / "1/16"）を変えて再配置する。"""
+        denom = wipe_size_denom(size)
+        if denom != self._size_denom:
+            self._size_denom = denom
             self._reposition()
 
     def set_video_size(self, w: int, h: int) -> None:
@@ -116,7 +141,7 @@ class WipeOverlay(QVideoWidget):
             return
         x, y, w, h = wipe_geometry(
             p.width(), p.height(), self._video_w, self._video_h,
-            self._corner, self._margin,
+            self._corner, self._margin, self._size_denom,
         )
         self.setGeometry(x, y, w, h)
         self.raise_()

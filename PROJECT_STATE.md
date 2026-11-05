@@ -20,7 +20,7 @@
 | リモート | `origin` = `https://github.com/electrist9/rhythmslide.git`（`main` は origin と同期済み） |
 | 作業ツリー | クリーン（`dist/`・`rhythmslide/data/`・`*.rslide`・`.venv/`・`PortableGit/` は gitignore 済み）。本 4 文書（PROJECT_STATE/ARCHITECTURE/DECISIONS/TODO）も git 管理済み |
 
-履歴（要約）: `d428740` 初回コミット（全ソース） → `71c6c82`/`8a1f935` `.rslide` 素の JSON 化 → `f86c9ae`/`f58a176` 多言語対応 → `8f7c401` v1.0.0 → `7f91631` README 便携版手順 → 動画ワイプ表示（feature/video-wipe-overlay → `--no-ff` マージ、2026-11-05）。機能ブランチはすべて `main` へマージ済み・削除済み。
+履歴（要約）: `d428740` 初回コミット（全ソース） → `71c6c82`/`8a1f935` `.rslide` 素の JSON 化 → `f86c9ae`/`f58a176` 多言語対応 → `8f7c401` v1.0.0 → `7f91631` README 便携版手順 → 動画ワイプ表示（feature/video-wipe-overlay → `--no-ff` マージ、2026-11-05）→ ワイプサイズメニュー（feature/video-wipe-size-menu → `--no-ff` マージ、2026-11-05）。機能ブランチはすべて `main` へマージ済み・削除済み。
 
 **注意**: `pyproject.toml` の `version` は `1.0.0` に修正済み（`__init__.py` と一致）。
 
@@ -35,7 +35,7 @@
 - 「再生のたびに画像順をランダム化」「**切り替えごとに**トランジットをランダム化」（既定 OFF）
 - 描画 FPS 選択 **30/60/144**（既定 60）
 - プレビュー再生（音声クロック同期）、**F11** で画像表示部をボーダーレス全画面⇔窓（全画面中も Space/Home/V 有効・カーソル非表示）、**F5** でプレゼン窓（独立フルスクリーン、外部ディスプレイ選択、スリープ抑制。V 有効）
-- **動画ワイプ表示（D21、2026-11-05 追加）**: 動画ファイル読み込み時に映像をスライドショー画面の四隅にワイプ表示。音声再生と同じ `QMediaPlayer` の映像出力を共有 `QVideoSink` で fan-out し、プレビュー/F11 全画面/F5 プレゼン窓に重ねる（音声クロックと完全同期、HW デコードは Qt の FFmpeg バックエンド既定で自動）。既定 OFF。メニュー「動画ワイプ表示」または **V キー**で切り替え（OFF は復号停止でゼロコスト）。「ワイプの位置」で右下（既定）/左下/右上/左上。サイズは表示領域の約 1/8（アスペクト比維持。実機確認を受け 2026-11-05 に 1/4 から縮小）。ON/OFF・位置は `config.json` と `.rslide` に永続化
+- **動画ワイプ表示（D21、2026-11-05 追加）**: 動画ファイル読み込み時に映像をスライドショー画面の四隅にワイプ表示。音声再生と同じ `QMediaPlayer` の映像出力を共有 `QVideoSink` で fan-out し、プレビュー/F11 全画面/F5 プレゼン窓に重ねる（音声クロックと完全同期、HW デコードは Qt の FFmpeg バックエンド既定で自動）。既定 OFF。メニュー「動画ワイプ表示」または **V キー**で切り替え（OFF は復号停止でゼロコスト）。「ワイプの位置」で右下（既定）/左下/右上/左上。「ワイプのサイズ」で 1/4 / 1/8（既定）/ 1/16 を選択可（表示領域に対する面積比、アスペクト比維持。当初 1/4 固定 → 実機確認を受け 2026-11-05 に 1/8 縮小 → 同日 3 段階選択可に変更）。ON/OFF・位置・サイズは `config.json` と `.rslide` に永続化
 - タイムライン編集（移動・伸縮・トランジション・ロック・Undo/Redo）、再生中は**再生位置へ自動横スクロール追従**
 - プロジェクト保存 `.rslide` = **素の JSON（UTF-8, indent=2）**。旧 zlib 圧縮（magic `RSLD1`）も読込互換
 - **FunScript 対応**: `.funscript` 読込で切替点そのものを使用。切替ルール 3 モード（上昇のみ/局所極値/累積移動距離）+ 振幅しきい値 + 累積ステップ + 循環順（順/往復）。同名 `.funscript` 自動検出（隣接 → 検索フォルダ複数・再帰）。**名前付きプリセット**を `funscript_presets.json` に保存、選択は `config.json` に記憶され起動時適用
@@ -62,7 +62,7 @@
   `& "F:\testws\PortableGit\cmd\git.exe" -C F:\testws <cmd> 2>&1 | Out-String`
   （git の stderr 出力で PowerShell が NativeCommandError 噪声を出すが無害）
 - **pwsh でビルド/テストすると exit code 1 の偽失敗が出ることがある**: PyInstaller/git が stderr に出す INFO を `2>&1` で合成すると PowerShell が非ゼロ終了にする。ログ末尾（例: `Build complete!`）で成否を判定すること。
-- **pytest はサンドボックス内実行だと tmp_path 作成で PermissionError になる**（コード不具合ではない。原因は pytest が basetemp/tmp を `mode=0o700` の厳格権限で作成し、サンドボックスのファイル監視がその配下を読めなくなるため。`--basetemp` をワークスペース内に変えても pytest 自身が同じ権限で作り直すため無効）。**2026-11-05 にサンドボックス外（通常権限）で全スイート実行し 147 件全通過を確認済み**。通常端末では §6 のコマンドでそのまま実行可。サンドボックス内ではロジック検証をワークスペース内一時ディレクトリ（`F:\testws\ptmp_*`）のインライン Python で行う（`tempfile.mkdtemp()` は既定で拒否される）。
+- **pytest はサンドボックス内実行だと tmp_path 作成で PermissionError になる**（コード不具合ではない。原因は pytest が basetemp/tmp を `mode=0o700` の厳格権限で作成し、サンドボックスのファイル監視がその配下を読めなくなるため。`--basetemp` をワークスペース内に変えても pytest 自身が同じ権限で作り直すため無効）。**2026-11-05 にサンドボックス外（通常権限）で全スイート実行し 151 件全通過を確認済み**。通常端末では §6 のコマンドでそのまま実行可。サンドボックス内ではロジック検証をワークスペース内一時ディレクトリ（`F:\testws\ptmp_*`）のインライン Python で行う（`tempfile.mkdtemp()` は既定で拒否される）。
 - ヘッドレス Qt: `$env:QT_QPA_PLATFORM="offscreen"`。**モーダルダイアログ（QMessageBox 等）はスクリプトを永久にブロックする**のでスタブ化すること。offscreen 時の `qt.multimedia.ffmpeg: Using Qt multimedia with FFmpeg version 9.0.1`、`QFontDatabase: Cannot find font directory` は無害警告。
 - PowerShell `Set-Content -Encoding utf8` は **UTF-8 BOM** を書く → `appconfig.load()`（BOM 非除去）が JSONDecodeError。テストでの書き出しは `appconfig.save()` を使うこと。
 - ffmpeg/ffprobe はシステム PATH（Gyan FFmpeg 9.0 full build）を spec が `shutil.which()` で拾って同梱する仕組み。`packaging/ffmpeg.exe` を置く必要も `FFMPEG_DIR` も不要（置くなら `FFMPEG_DIR` 環境変数で上書き可）。

@@ -202,6 +202,9 @@ def _opt_int(value: Any) -> Optional[int]:
 #: 動画ワイプ表示の位置指定（設定・メニュー・レイアウト計算で共通）
 WIPE_CORNERS: tuple[str, ...] = ("bottom_right", "bottom_left", "top_right", "top_left")
 
+#: 動画ワイプ表示のサイズ指定（表示領域に対する面積比。分母がレイアウト計算に使われる）
+WIPE_SIZES: tuple[str, ...] = ("1/4", "1/8", "1/16")
+
 
 @dataclass
 class Settings:
@@ -235,6 +238,8 @@ class Settings:
     video_wipe: bool = False
     #: ワイプの位置（"bottom_right" / "bottom_left" / "top_right" / "top_left"）
     video_wipe_corner: str = "bottom_right"
+    #: ワイプのサイズ（表示領域に対する面積比 "1/4" / "1/8" / "1/16"。既定は 1/8）
+    video_wipe_size: str = "1/8"
     presentation: PresentationSettings = field(default_factory=PresentationSettings)
 
     def to_dict(self) -> dict[str, Any]:
@@ -254,6 +259,7 @@ class Settings:
             "photo_order": self.photo_order,
             "video_wipe": bool(self.video_wipe),
             "video_wipe_corner": self.video_wipe_corner,
+            "video_wipe_size": self.video_wipe_size,
             "presentation": self.presentation.to_dict(),
         }
 
@@ -285,6 +291,7 @@ class Settings:
             video_wipe_corner=_choice(
                 data.get("video_wipe_corner"), WIPE_CORNERS, "bottom_right"
             ),
+            video_wipe_size=_choice(data.get("video_wipe_size"), WIPE_SIZES, "1/8"),
             presentation=PresentationSettings.from_dict(data.get("presentation")),
         )
 

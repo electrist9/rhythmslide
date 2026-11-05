@@ -32,7 +32,7 @@ from ..core.funscript import (
 from ..core.imagecache import ImageCache
 from ..core.models import (
     PresentationSettings, Project, RENDER_FPS_CHOICES, Settings, TRANSITION_TYPES,
-    UNIT_BEATS_CHOICES, WIPE_CORNERS,
+    UNIT_BEATS_CHOICES, WIPE_CORNERS, WIPE_SIZES,
 )
 from ..core.projectstore import load_project, save_project, try_load_project
 from ..core.renderlogic import slide_at, total_duration
@@ -103,7 +103,9 @@ class MainWindow(QMainWindow):
         # プレビューの動画ワイプ（プレビューの子ウィジェットなので
         # F11 全画面での再親付けに自動的に追随する）
         self._preview_wipe = WipeOverlay(
-            self.preview, self.project.settings.video_wipe_corner
+            self.preview,
+            self.project.settings.video_wipe_corner,
+            size=self.project.settings.video_wipe_size,
         )
         self._wipe_overlays.append(self._preview_wipe)
         if self.project.settings.video_wipe:
@@ -254,6 +256,16 @@ class MainWindow(QMainWindow):
             act.setChecked(corner == self.project.settings.video_wipe_corner)
             act.triggered.connect(lambda checked, c=corner: self._change_wipe_corner(c))
             self._wipe_corner_actions.append(act)
+        # ワイプのサイズ（面積比。ラベルは "1/4" 等で言語非依存）
+        self._wipe_size_menu = m_play.addMenu(self.tr("ワイプのサイズ"))
+        self._wipe_size_actions: list[QAction] = []
+        for size in WIPE_SIZES:
+            act = self._wipe_size_menu.addAction(size)
+            act.setCheckable(True)
+            act.setData(size)  # 正規値
+            act.setChecked(size == self.project.settings.video_wipe_size)
+            act.triggered.connect(lambda checked, z=size: self._change_wipe_size(z))
+            self._wipe_size_actions.append(act)
 
         m_tools = bar.addMenu(self.tr("ツール"))
         self._act(m_tools, self.tr("外部制御（VLC 互換）…"), self.configure_remote_control)
@@ -862,6 +874,16 @@ class MainWindow(QMainWindow):
         for w in self._wipe_overlays:
             w.set_corner(corner)
 
+    def _change_wipe_size(self, size: str) -> None:
+        """ワイプのサイズ（面積比 1/4 / 1/8 / 1/16）を変える。OFF でも設定として記憶する。"""
+        if size not in WIPE_SIZES:
+            return
+        self.project.settings.video_wipe_size = size
+        for act in self._wipe_size_actions:
+            act.setChecked(act.data() == size)
+        for w in self._wipe_overlays:
+            w.set_size(size)
+
     def _on_wipe_frame(self, frame) -> None:
         """共有 QVideoSink へ届いたフレームを各窓のオーバーレイへ fan-out する。
 
@@ -1025,7 +1047,11 @@ class MainWindow(QMainWindow):
         self._presentation.togglePauseRequested.connect(self.toggle_play)
         self._presentation.wipeToggleRequested.connect(self.toggle_video_wipe)
         # プレゼン窓にもワイプを重ねる（共有シンクからの fan-out 対象に追加）
-        pw = WipeOverlay(self._presentation, self.project.settings.video_wipe_corner)
+        pw = WipeOverlay(
+            self._presentation,
+            self.project.settings.video_wipe_corner,
+            size=self.project.settings.video_wipe_size,
+        )
         if self._wipe_video_size != (0, 0):
             pw.set_video_size(*self._wipe_video_size)
         pw.setVisible(self.project.settings.video_wipe and self.player.hasVideo())
@@ -1404,10 +1430,12 @@ class MainWindow(QMainWindow):
         # 余白を画像の支配色にする
         mode = str(d.get("background_mode", s.presentation.background_mode))
         s.presentation.background_mode = mode if mode in ("solid", "dominant") else "solid"
-        # 動画ワイプ表示（ON/OFF と位置。位置が不正なら既定の右下）
+        # 動画ワイプ表示（ON/OFF と位置・サイズ。値が不正なら既定へ）
         s.video_wipe = bool(d.get("video_wipe", s.video_wipe))
         corner = str(d.get("video_wipe_corner", s.video_wipe_corner))
         s.video_wipe_corner = corner if corner in WIPE_CORNERS else "bottom_right"
+        size = str(d.get("video_wipe_size", s.video_wipe_size))
+        s.video_wipe_size = size if size in WIPE_SIZES else "1/8"
         # プレビューの背景モードにも反映（プレゼン窓は未生成なので起動時は不要）
         self.preview.set_background_mode(s.presentation.background_mode)
 
@@ -1444,6 +1472,7 @@ class MainWindow(QMainWindow):
             "background_mode": s.presentation.background_mode,
             "video_wipe": bool(s.video_wipe),
             "video_wipe_corner": s.video_wipe_corner,
+            "video_wipe_size": s.video_wipe_size,
         }
         appconfig.save(self._config)
 
