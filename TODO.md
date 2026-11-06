@@ -1,6 +1,6 @@
 # TODO.md — RhythmSlide 未了・技術的負債・拡張候補
 
-> 2026-11-05 時点。**ユーザーからの未対応依頼はゼロ**（v1.0.0 リリース・便携 ZIP 配布・README・動画ワイプ表示・v1.1.0 便携 ZIP 再生成まで完了）。
+> 2026-11-06 時点。**ユーザーからの未対応依頼はゼロ**（v1.0.0 リリース・便携 ZIP 配布・README・動画ワイプ表示・v1.1.0 便携 ZIP 再生成・ワイプ起動表示の修正まで完了。修正分の push と ZIP 再配布はユーザー判断待ち → A8）。
 > 以下は「未検証」「負債」「未合意の候補」であり、着手前に必ず `DECISIONS.md` を参照すること。
 
 ## A. 未検証・確認事項（優先度順）
@@ -16,7 +16,7 @@
 - onedir 構成を採用しているため onefile は不採用。`packaging/rhythmslide_onefile.spec` および `build/rhythmslide_onefile/` を削除済み。
 
 ### A4. ~~pytest 全スイートを通常環境で実行していない~~ ✅ 完了
-- 2026-11-05 にサンドボックス外（通常権限）で全スイート実行し **151 件全通過**（動画ワイプ表示・サイズメニューのテスト含む）。
+- 2026-11-06 にサンドボックス外（通常権限）で全スイート実行し **153 件全通過**（動画ワイプ表示・サイズメニュー・ワイプ起動表示修正の回帰テスト含む）。
 - 原因メモ: サンドボックス内失敗は pytest が一時ディレクトリを `mode=0o700`（厳格権限）で作るためファイル監視が配下を読めなくなる環境側の衝突。コード不具合ではないと確認済み。
 
 ### A5. GUI の実機マニュアル QA をこの環境では行っていない
@@ -28,6 +28,11 @@
 ### A7. ~~`dist/` の残骸整理~~ ✅ 完了
 - 削除済み: `dist/RhythmSlide-0.1.0-win64.zip`（旧版）、`dist/rhythmslide.exe`（onefile 実験残骸）。
 - 保持: `dist/RhythmSlide-1.1.0-win64.zip`（現行配布物）、`dist/RhythmSlide-1.0.0-win64.zip`（旧版）、`dist/rhythmslide/`（onedir 材料）。
+
+### A8. ワイプ起動表示の修正が公開中の便携 ZIP に未反映（**ユーザー判断待ち**）
+- 修正（`66bd297`）は `main` にマージ済みだが push 前。公開中の `RhythmSlide-1.1.0-win64.zip`（GitHub リリース）には**修正が入っていない**。
+- 対応案: (a) ユーザーが `main` を push して修正のみ公開（ZIP はそのまま）、(b) バージョンを 1.1.1 に上げて onedir 再ビルド → ZIP 再作成 → リリース更新（約 13 分 + サニタイズ手順は README / D15・D16）。
+- 実機での修正確認（`video_wipe: true` の config.json で起動 → 動画読み込みでワイプ表示）が先。確認後にユーザーが判断すること。
 
 ## B. 実装の穴（意図的に未接続の部分）
 
@@ -56,6 +61,7 @@
 
 ## E. 直近の完了物（文脈用・これ以上の作業なし）
 
+- **ワイプ起動表示の修正**（2026-11-06、issue 対応）: `config.json` の `video_wipe: true` で起動時にワイプが表示されない不具合を修正。原因は Qt 6.12 に存在しない `QMediaMetaData.Key.VideoWidth/VideoHeight` 参照による AttributeError（`mediaStatusChanged` ハンドラが途中で停止）。メタデータ参照を廃止し動画サイズは最初のフレームで計測。併せてワイプ設定をアプリ全体の表示設定としてプロジェクト読込でも引き継ぐよう変更（`_preserve_wipe_settings`）。fix/wipe-startup-visibility → `main` へ `--no-ff` マージ（`66bd297`）、回帰テスト 2 件追加・全 153 件通過。**push・ZIP 再配布は未実施（A8）**。
 - **動画ワイプ表示**（2026-11-05、D21 合意・実装）: 四隅オーバーレイ（共有 QVideoSink fan-out、V キー、メニュー、位置選択、サイズ 1/4・1/8・1/16 選択可で既定 1/8、永続化、HW デコード自動）。feature/video-wipe-overlay / feature/video-wipe-size-menu → `main` へ `--no-ff` マージ。実機確認済み。
 - **v1.1.0**（tag `v1.1.0` @ `c82f8e5`、push 済み）、便携 ZIP `RhythmSlide-1.1.0-win64.zip`（2026-11-05 ビルド・中身検証済み・GitHub リリース公開済み。同梱 config.json はサニタイズ済み）。
 - v1.0.0（tag `v1.0.0` @ `8f7c401`）、便携 ZIP `RhythmSlide-1.0.0-win64.zip`（2026-10-24 ビルド・中身検証済み）、README 便携版手順（`7f91631`）。
