@@ -219,6 +219,68 @@ def test_wipe_state_persisted_on_close(main_window, tmp_path):
         w2.close()
 
 
+def test_media_loaded_shows_wipe_when_on(main_window, monkeypatch):
+    """issue 回帰: ワイプ ON の状態で動画メディアの読込が完了すると表示される。
+
+    修正前は _refresh_wipe_video_size が Qt 6.12 に存在しない
+    QMediaMetaData の動画サイズキーを参照して例外になり、表示切り替えが
+    走っていなかった（V / メニューのトグルだけが動作していた）。
+    """
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    w = main_window
+    w.toggle_video_wipe()  # ON（メディアなしでは非表示のまま）
+    assert w._preview_wipe.isHidden()
+    # 実機では LoadedMedia の時点で hasVideo() は True（プローブで確認済み）
+    monkeypatch.setattr(w.player, "hasVideo", lambda: True)
+    w._on_media_status(QMediaPlayer.MediaStatus.LoadedMedia)
+    assert not w._preview_wipe.isHidden()
+    # 映像なしメディアへ切り替われば再び非表示
+    monkeypatch.setattr(w.player, "hasVideo", lambda: False)
+    w._on_media_status(QMediaPlayer.MediaStatus.LoadedMedia)
+    assert w._preview_wipe.isHidden()
+
+
+def test_project_load_preserves_wipe(tmp_path, monkeypatch, qtbot):
+    """issue 回帰: ワイプ設定はアプリ全体の表示設定なので、プロジェクト読込でも引き継ぐ。
+
+    config.json に ON / 位置 / サイズが記憶されていれば、ワイプ OFF で保存された
+    旧 .rslide を読んでも ON が維持され、メニューのチェックも一致する。
+    """
+    from rhythmslide.core.models import Project
+    from rhythmslide.core.projectstore import save_project
+    from rhythmslide.ui.mainwindow import MainWindow
+
+    monkeypatch.setenv("RHYTHMSLIDE_DATA_DIR", str(tmp_path))
+    w = MainWindow()
+    qtbot.addWidget(w)
+    w.toggle_video_wipe()
+    w._change_wipe_corner("top_right")
+    w._change_wipe_size("1/16")
+    w.close()  # config.json に ON / top_right / 1/16 を保存
+
+    # ワイプ OFF・既定位置・既定サイズで保存された旧プロジェクトを模す
+    proj = Project()
+    proj.settings.video_wipe = False
+    proj.settings.video_wipe_corner = "bottom_right"
+    proj.settings.video_wipe_size = "1/8"
+    path = tmp_path / "old.rslide"
+    save_project(proj, path)
+
+    w2 = MainWindow()
+    qtbot.addWidget(w2)
+    try:
+        assert w2._load_project_path(str(path))
+        assert w2.project.settings.video_wipe is True
+        assert w2.project.settings.video_wipe_corner == "top_right"
+        assert w2.project.settings.video_wipe_size == "1/16"
+        assert w2._act_wipe.isChecked()
+        assert w2._preview_wipe._corner == "top_right"
+        assert w2._preview_wipe._size_denom == 16
+    finally:
+        w2.close()
+
+
 def test_fullscreen_host_v_key(main_window):
     """F11 全画面ホストで V キーがワイプ切替へ橋渡しされる（要件 4）。"""
     from PySide6.QtCore import QEvent, Qt
