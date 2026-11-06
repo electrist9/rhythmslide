@@ -1,7 +1,7 @@
 # PROJECT_STATE.md — RhythmSlide プロジェクト現状
 
 > 別セッションから初参加した開発者（LLM 含む）が、このファイルだけで開発継続を開始できることを目的とする。
-> 最終更新: 2026-11-06（ワイプ ON 起動時に動画ワイプが表示されない不具合の修正を `main` へ `--no-ff` マージした時点）
+> 最終更新: 2026-11-06（v1.1.1 の便携 ZIP `RhythmSlide-1.1.1-win64.zip` 作成・検証完了時点）
 
 ## 1. プロジェクト概要
 
@@ -14,15 +14,15 @@
 
 | 項目 | 値 |
 |---|---|
-| バージョン | **1.1.0**（唯一の定義元: `rhythmslide/__init__.py` の `__version__`） |
-| ブランチ | `main`（HEAD = `66bd297`「ブランチ fix/wipe-startup-visibility をマージ（ワイプ起動表示の不具合修正）」。feature/fix ブランチはすべて削除済み） |
-| タグ | `v1.0.0`（annotated、`8f7c401` を指す）、`v1.1.0`（annotated、`c82f8e5`「バージョンを 1.1.0 に更新」を指す） |
-| リモート | `origin` = `https://github.com/electrist9/rhythmslide.git`（`main` は **2 コミット先行**（ワイプ起動表示の修正 + マージ。push 待ち）。タグ `v1.0.0`/`v1.1.0` と便携 ZIP の GitHub リリースは公開済み。push はユーザーの手動運用） |
+| バージョン | **1.1.1**（唯一の定義元: `rhythmslide/__init__.py` の `__version__`） |
+| ブランチ | `main`（HEAD = `0fe4b71`「バージョンを 1.1.1 に更新」。feature/fix ブランチはすべて削除済み） |
+| タグ | `v1.0.0`（annotated、`8f7c401` を指す）、`v1.1.0`（annotated、`c82f8e5` を指す）、`v1.1.1`（annotated、`0fe4b71`「バージョンを 1.1.1 に更新」を指す。**未 push**） |
+| リモート | `origin` = `https://github.com/electrist9/rhythmslide.git`（`main` は **1 コミット先行**（バージョン更新 `0fe4b71`。push 待ち）。タグ `v1.0.0`/`v1.1.0` は push 済み。便携 ZIP の GitHub リリース公開はユーザーの手動運用。push も同様） |
 | 作業ツリー | クリーン（`dist/`・`rhythmslide/data/`・`*.rslide`・`.venv/`・`PortableGit/` は gitignore 済み）。本 4 文書（PROJECT_STATE/ARCHITECTURE/DECISIONS/TODO）も git 管理済み |
 
-履歴（要約）: `d428740` 初回コミット（全ソース） → `71c6c82`/`8a1f935` `.rslide` 素の JSON 化 → `f86c9ae`/`f58a176` 多言語対応 → `8f7c401` v1.0.0 → `7f91631` README 便携版手順 → 動画ワイプ表示（feature/video-wipe-overlay → `--no-ff` マージ、2026-11-05）→ ワイプサイズメニュー（feature/video-wipe-size-menu → `--no-ff` マージ、2026-11-05）→ `c82f8e5` v1.1.0（tag `v1.1.0`）+ 便携 ZIP 再生成 → ワイプ起動表示の修正（fix/wipe-startup-visibility → `--no-ff` マージ `66bd297`、2026-11-06）。機能ブランチはすべて `main` へマージ済み・削除済み。
+履歴（要約）: `d428740` 初回コミット（全ソース） → `71c6c82`/`8a1f935` `.rslide` 素の JSON 化 → `f86c9ae`/`f58a176` 多言語対応 → `8f7c401` v1.0.0 → `7f91631` README 便携版手順 → 動画ワイプ表示（feature/video-wipe-overlay → `--no-ff` マージ、2026-11-05）→ ワイプサイズメニュー（feature/video-wipe-size-menu → `--no-ff` マージ、2026-11-05）→ `c82f8e5` v1.1.0（tag `v1.1.0`）+ 便携 ZIP 再生成 → ワイプ起動表示の修正（fix/wipe-startup-visibility → `--no-ff` マージ `66bd297`、2026-11-06、実機確認済み・push 済み）→ `0fe4b71` v1.1.1（tag `v1.1.1`）+ 便携 ZIP 再生成。機能ブランチはすべて `main` へマージ済み・削除済み。
 
-**注意**: `pyproject.toml` の `version` は `1.1.0` に更新済み（`__init__.py` と一致）。`packaging/installer.iss` の `MyAppVersion` も `1.1.0` に更新済み（未実行検証、TODO A2）。
+**注意**: `pyproject.toml` の `version` は `1.1.1` に更新済み（`__init__.py` と一致）。`packaging/installer.iss` の `MyAppVersion` も `1.1.1` に更新済み（未実行検証、TODO A2）。
 
 ## 3. 実装済み機能（すべて `main` に統合済み・ユーザー確認済み）
 
@@ -47,8 +47,9 @@
 
 | 成果物 | 状態 |
 |---|---|
-| `dist/RhythmSlide-1.1.0-win64.zip`（252,683,903 B ≒ 241 MB、271 エントリ） | **現行の便携 ZIP**（2026-11-05 ビルド・GitHub リリース公開済み）。v1.1.0 + 動画ワイプ表示（四隅・サイズ選択・V キー）を反映。内部検証済み（トップレベル `rhythmslide/`、`rhythmslide.exe`、`_internal/bin/ffmpeg.exe`+`ffprobe.exe`、`_internal/locale/*.qm`、`rhythmslide/data/{config,funscript_presets}.json`）。同梱 `config.json` は**サニタイズ済み**（言語 ja・RC 無効・127.0.0.1） |
-| `dist/rhythmslide/` | onedir 出力フォルダ（便携 ZIP の材料。2026-11-05 ビルド） |
+| `dist/RhythmSlide-1.1.1-win64.zip`（252,683,477 B ≒ 241 MB、271 エントリ） | **現行の便携 ZIP**（2026-11-06 ビルド・内部検証済み。GitHub リリース公開はユーザーの手動運用待ち）。v1.1.1 = ワイプ起動表示の修正（`66bd297`）を反映。内部検証済み（トップレベル `rhythmslide/`、`rhythmslide.exe`、`_internal/bin/ffmpeg.exe`+`ffprobe.exe`、`_internal/locale/*.qm`、`rhythmslide/data/{config,funscript_presets}.json`）。同梱 `config.json` は**サニタイズ済み**（言語 ja・RC 無効・127.0.0.1） |
+| `dist/rhythmslide/` | onedir 出力フォルダ（便携 ZIP の材料。2026-11-06 ビルド） |
+| `dist/RhythmSlide-1.1.0-win64.zip`（252,683,903 B ≒ 241 MB、271 エントリ） | **旧版（残置）**。v1.1.0 + 動画ワイプ表示（四隅・サイズ選択・V キー）を反映。GitHub リリース公開済み。ただし**ワイプ起動表示の修正は未反映** |
 | `dist/RhythmSlide-1.0.0-win64.zip`（252,673,442 B ≒ 241 MB、271 エントリ） | **旧版（残置）**。v1.0.0 + i18n + listen-address + JSON 化を反映。内部検証済み |
 
 
@@ -83,7 +84,7 @@ F:\testws\.venv\Scripts\python.exe -m pytest -p no:cacheprovider
 # 便携 ZIP 化（トップレベルに rhythmslide/ を含める）
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory(
-    "F:\testws\dist\rhythmslide", "F:\testws\dist\RhythmSlide-1.1.0-win64.zip",
+    "F:\testws\dist\rhythmslide", "F:\testws\dist\RhythmSlide-1.1.1-win64.zip",
     [System.IO.Compression.CompressionLevel]::Optimal, $true)
 
 # 翻訳更新（UI 文言変更後）
