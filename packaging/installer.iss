@@ -3,7 +3,7 @@
 ; 参考: https://jrsoftware.org/isinfo.php
 
 #define MyAppName "RhythmSlide"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "RhythmSlide"
 #define MyAppExeName "rhythmslide.exe"
 
