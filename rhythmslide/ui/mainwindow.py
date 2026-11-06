@@ -13,7 +13,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QKeyEvent, QKeySequence, QUndoStack
-from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer, QVideoSink
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtNetwork import QHostAddress
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDockWidget,
@@ -902,17 +902,13 @@ class MainWindow(QMainWindow):
             w.videoSink().setVideoFrame(frame)
 
     def _refresh_wipe_video_size(self) -> None:
-        """メディア読込後、メタデータから動画サイズを覚えてワイプの可視性を更新。"""
-        md = self.player.metaData()
-        try:
-            vw = int(md.value(QMediaMetaData.Key.VideoWidth) or 0)
-            vh = int(md.value(QMediaMetaData.Key.VideoHeight) or 0)
-        except (TypeError, ValueError):
-            vw = vh = 0
-        if vw > 0 and vh > 0:
-            self._wipe_video_size = (vw, vh)
-            for w in self._wipe_overlays:
-                w.set_video_size(vw, vh)
+        """メディア読込完了時にワイプの表示可否を再評価する。
+
+        Qt 6.12 の QMediaMetaData には動画サイズのキーが無いため、サイズは
+        最初のフレーム（_on_wipe_frame）で計測する。ここでは前回メディアの
+        サイズをリセットし、hasVideo に応じてオーバーレイの表示を切り替える。
+        """
+        self._wipe_video_size = (0, 0)
         self._update_wipe_visibility()
 
     def _reshuffle_photos(self) -> None:
@@ -1177,7 +1173,9 @@ class MainWindow(QMainWindow):
         if err:
             QMessageBox.warning(self, self.tr("読み込み"), self._project_load_error_text(err))
             return False
+        old_settings = self.project.settings
         self.project = proj
+        self._preserve_wipe_settings(old_settings)
         self.undo_stack.clear()
         self._random_order_action.setChecked(self.project.settings.random_order)
         self._random_transition_action.setChecked(self.project.settings.random_transition)
@@ -1438,6 +1436,29 @@ class MainWindow(QMainWindow):
         s.video_wipe_size = size if size in WIPE_SIZES else "1/8"
         # プレビューの背景モードにも反映（プレゼン窓は未生成なので起動時は不要）
         self.preview.set_background_mode(s.presentation.background_mode)
+
+    def _preserve_wipe_settings(self, old: Settings) -> None:
+        """ワイプ設定はアプリ全体の表示設定なので、プロジェクト読込でも引き継ぐ。
+
+        .rslide にも Settings の一部としてワイプ項目が記録されるが、config.json
+        （起動時復元値）やセッション中の V / メニュー切替を正とし、読んだ
+        プロジェクトの設定で上書きしない。メニューのチェック・オーバーレイ・
+        シンク接続も現在の設定へ同期する。
+        """
+        s = self.project.settings
+        s.video_wipe = old.video_wipe
+        s.video_wipe_corner = old.video_wipe_corner
+        s.video_wipe_size = old.video_wipe_size
+        self._act_wipe.setChecked(s.video_wipe)
+        for act in self._wipe_corner_actions:
+            act.setChecked(act.data() == s.video_wipe_corner)
+        for act in self._wipe_size_actions:
+            act.setChecked(act.data() == s.video_wipe_size)
+        for w in self._wipe_overlays:
+            w.set_corner(s.video_wipe_corner)
+            w.set_size(s.video_wipe_size)
+        self.player.setVideoOutput(self._wipe_sink if s.video_wipe else None)
+        self._update_wipe_visibility()
 
     def _apply_persisted_funscript_preset(self) -> None:
         """config.json に記憶した FunScript プリセット選択を既定ルールへ反映する。
