@@ -6,11 +6,13 @@ QThreadPool + QRunnable。スキャン→（後続で）EXIF 補完、音声解�
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from PySide6.QtCore import QCoreApplication, QObject, QRunnable, Signal
 
 from ..core.audio import probe_audio
 from ..core.beatcache import BeatCache
+from ..core.beatproviders import DEFAULT_PROVIDER_ID
 from ..core.exif import read_taken_at
 from ..core.models import AudioInfo, PhotoItem
 from ..core.scanner import ScanResult, resorted, scan_photo_root
@@ -81,16 +83,32 @@ class EnrichWorker(_BaseWorker):
 
 
 class AnalysisWorker(_BaseWorker):
-    """音声解析（キャッシュ利用）で AudioInfo を返す。"""
+    """音声解析（キャッシュ利用）で AudioInfo を返す。
 
-    def __init__(self, audio_path: str, cache: BeatCache | None = None) -> None:
+    provider_id / params でビート検出プロバイダを指定する。
+    force=True でキャッシュを読み飛ばして再解析する（ビート検出の切り替え時など）。
+    """
+
+    def __init__(
+        self,
+        audio_path: str,
+        cache: BeatCache | None = None,
+        provider_id: str = DEFAULT_PROVIDER_ID,
+        params: dict[str, Any] | None = None,
+        force: bool = False,
+    ) -> None:
         super().__init__()
         self.audio_path = audio_path
         self.cache = cache or BeatCache()
+        self.provider_id = provider_id
+        self.params = dict(params or {})
+        self.force = force
 
     def _run(self) -> None:
         self.signals.step.emit(QCoreApplication.translate("MainWindow", "リズムを解析中…"))
-        info: AudioInfo = self.cache.analyze(self.audio_path)
+        info: AudioInfo = self.cache.analyze(
+            self.audio_path, self.provider_id, self.params, force=self.force
+        )
         self.signals.finished.emit(info)
 
 

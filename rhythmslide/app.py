@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 
 from . import APP_NAME, __version__
 from .core import appconfig
+from .core.beatproviders import load_beat_provider_plugins
 from .core.paths import ensure_data_dir
 from .i18n import install_translator, resolve_language
 from .ui.mainwindow import MainWindow
@@ -43,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
 
     data = ensure_data_dir()
     log.info("データ保存先: %s", data)
+
+    # ビート検出プロバイダのプラグイン（data_dir/beatproviders/*.py）を登録する。
+    # 失敗しても致命的ではない（標準プロバイダだけで起動を続ける）。
+    loaded = load_beat_provider_plugins()
+    if loaded:
+        log.info("ビート検出プラグイン読込: %s", ", ".join(loaded))
 
     # 言語は config.json から読み、翻訳をインストールしてから UI を構築する
     # （翻訳は MainWindow 構築前に適用する必要がある）。

@@ -17,7 +17,7 @@ from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtNetwork import QHostAddress
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDockWidget,
-    QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QListWidget, QMainWindow, QMessageBox, QPushButton, QSpinBox, QSplitter,
     QVBoxLayout, QWidget,
 )
@@ -26,8 +26,9 @@ from ..core import appconfig
 from ..core.audio import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, has_audio_stream
 from ..core.beatcache import BeatCache
 from ..core.beatmapper import build_timeline
+from ..core.beatproviders import get_beat_provider, list_beat_providers
 from ..core.funscript import (
-    find_funscript, load_funscript, make_preset, sanitize_presets,
+    make_preset, sanitize_presets,
 )
 from ..core.imagecache import ImageCache
 from ..core.models import (
@@ -156,12 +157,11 @@ class MainWindow(QMainWindow):
         self._act(m_file, self.tr("写真フォルダを選択…"), self.choose_photo_folder, "Ctrl+O")
         self._act(m_file, self.tr("音声・動画ファイルを選択…"), self.choose_audio, "Ctrl+A")
         self._act(m_file, self.tr("FunScript を読み込む…"), self.choose_funscript)
-        self._act(m_file, self.tr("FunScript を解除"), self.clear_funscript)
-        self._act(m_file, self.tr("FunScript 検索フォルダ…"), self.manage_funscript_search_dirs)
-        self._act(m_file, self.tr("FunScript 切替ルール…"), self.configure_funscript_rules)
         m_file.addSeparator()
         self._act(m_file, self.tr("プロジェクト保存…"), self.save_project, "Ctrl+S")
         self._act(m_file, self.tr("プロジェクトを開く…"), self.open_project, "Ctrl+D")
+        m_file.addSeparator()
+        self._act(m_file, self.tr("設定…"), self.open_settings_dialog)
         m_file.addSeparator()
         self._act(m_file, self.tr("終了"), self.close, "Ctrl+Q")
 
@@ -226,6 +226,17 @@ class MainWindow(QMainWindow):
             self.project.settings.presentation.background_mode == "dominant"
         )
         self._dominant_bg_action.triggered.connect(self._toggle_dominant_background)
+        m_edit.addSeparator()
+        # ビート検出プロバイダ（プラグイン登録で項目が増える）
+        self.beat_provider_menu = m_edit.addMenu(self.tr("ビート検出"))
+        self._beat_provider_actions: dict[str, QAction] = {}
+        for provider in list_beat_providers():
+            act = self.beat_provider_menu.addAction(provider.label)
+            act.setCheckable(True)
+            act.setData(provider.id)  # 正規値（言語非依存）
+            act.setChecked(provider.id == self.project.settings.beat_provider)
+            act.triggered.connect(lambda checked, pid=provider.id: self._change_beat_provider(pid))
+            self._beat_provider_actions[provider.id] = act
 
         m_play = bar.addMenu(self.tr("再生"))
         self._act(m_play, self.tr("再生/一時停止"), self.toggle_play, Qt.Key.Key_Space)
@@ -407,7 +418,8 @@ class MainWindow(QMainWindow):
         # 新しいメディアの動画サイズはまだ不明（LoadedMedia で再取得）
         self._wipe_video_size = (0, 0)
         self.player.setSource(_url(path))
-        worker = AnalysisWorker(path, self.beat_cache)
+        st = self.project.settings
+        worker = AnalysisWorker(path, self.beat_cache, st.beat_provider, self._beat_provider_params(st))
         worker.signals.step.connect(self.statusBar().showMessage)
         if interactive:
             worker.signals.error.connect(lambda m: QMessageBox.warning(self, self.tr("解析"), m))
@@ -418,11 +430,17 @@ class MainWindow(QMainWindow):
 
     def _on_analysis_finished(self, info) -> None:
         self.project.audio = info
-        self._maybe_autoload_funscript(info.path)
-        self.statusBar().showMessage(
-            fmt(self.tr("解析完了: %1 BPM / 信頼度 %2 / %3s"),
-                f"{info.bpm:.0f}", f"{info.confidence:.2f}", f"{info.duration:.0f}")
-        )
+        if info.provider == "funscript" and info.method == "beat":
+            self.statusBar().showMessage(
+                fmt(self.tr("解析完了（FunScript）: 切替点 %1 件 / %2s"),
+                    f"{len(info.beats)}", f"{info.duration:.0f}")
+            )
+        else:
+            self.statusBar().showMessage(
+                fmt(self.tr("解析完了（%1）: %2 BPM / 信頼度 %3 / %4s"),
+                    self._provider_label(info.provider),
+                    f"{info.bpm:.0f}", f"{info.confidence:.2f}", f"{info.duration:.0f}")
+            )
         self.relayout()
 
     # ==================================================================
@@ -446,39 +464,78 @@ class MainWindow(QMainWindow):
         self._apply_funscript(path)
 
     def _apply_funscript(self, path: str) -> bool:
-        """FunScript を読み込み、音声情報に切替時刻を反映する。"""
+        """FunScript プロバイダに切り替え、指定ファイルで再解析する。"""
         audio = self.project.audio
         if audio is None:
             return False
-        try:
-            st = self.project.settings
-            switches = load_funscript(
-                path, st.funscript_mode, st.funscript_threshold, st.funscript_step
-            )
-        except ValueError as exc:
-            QMessageBox.warning(
-                self, self.tr("FunScript"),
-                fmt(self.tr("FunScript の読み込みに失敗しました: %1"), str(exc)),
-            )
-            return False
-        if not switches:
-            QMessageBox.warning(self, self.tr("FunScript"), self.tr("画像の切替点が見つかりませんでした。"))
-            return False
-        audio.funscript_path = str(path)
-        audio.funscript_switches = switches
+        st = self.project.settings
+        st.beat_provider = "funscript"
+        st.beat_params = dict(st.beat_params)
+        st.beat_params["path"] = str(path)
+        self._sync_beat_provider_menu()
         self._remember_dir("funscript_dir", path)
-        self.statusBar().showMessage(fmt(self.tr("FunScript 読込: 切替点 %1 件"), len(switches)))
-        self.relayout()
+        self._start_analysis(audio.path, force=True)
         return True
 
-    def _maybe_autoload_funscript(self, audio_path: str) -> None:
-        """音声・動画と同じベースファイル名の .funscript を探して自動で読み込む。
+    def _start_analysis(self, audio_path: str, force: bool = False) -> None:
+        """設定中のビートプロバイダで音声（再）解析を開始する。"""
+        st = self.project.settings
+        worker = AnalysisWorker(
+            audio_path, self.beat_cache, st.beat_provider,
+            self._beat_provider_params(st), force,
+        )
+        worker.signals.step.connect(self.statusBar().showMessage)
+        worker.signals.error.connect(lambda m: QMessageBox.warning(self, self.tr("解析"), m))
+        worker.signals.finished.connect(self._on_analysis_finished)
+        self.pool.start(worker)
 
-        探索順: ①音声・動画と同じフォルダ（隣接）→ ②設定した検索フォルダ配下（再帰）。
+    def _change_beat_provider(self, provider_id: str) -> None:
+        """編集メニューでビート検出ロジックを切り替え、自動で再解析する。
+
+        音声・動画が選択中の場合は新しいプロバイダで強制再解析する
+        （FunScript はファイルの更新時刻がキャッシュの指紋に含まれないため、
+        必ず読み直す）。未選択なら設定の保存だけ行う。
         """
-        cand = self._find_funscript_for(audio_path)
-        if cand is not None:
-            self._apply_funscript(str(cand))
+        st = self.project.settings
+        if provider_id == st.beat_provider:
+            self._sync_beat_provider_menu()
+            return
+        st.beat_provider = provider_id
+        if provider_id != "funscript":
+            # プロバイダ固有のファイル指定は残さない
+            st.beat_params = {k: v for k, v in dict(st.beat_params).items() if k != "path"}
+        self._sync_beat_provider_menu()
+        label = self._provider_label(provider_id)
+        audio = self.project.audio
+        if audio is not None:
+            self.statusBar().showMessage(
+                fmt(self.tr("ビート検出を「%1」に切り替えました。再解析します…"), label)
+            )
+            self._start_analysis(audio.path, force=True)
+        else:
+            self.statusBar().showMessage(
+                fmt(self.tr("ビート検出を「%1」に切り替えました"), label)
+            )
+
+    def _sync_beat_provider_menu(self) -> None:
+        """ビート検出サブメニューのチェックを現在の設定へ一致させる。"""
+        current = self.project.settings.beat_provider
+        for pid, act in self._beat_provider_actions.items():
+            act.setChecked(pid == current)
+
+    def _provider_label(self, provider_id: str) -> str:
+        """プロバイダ id の表示名（未知の id はそのまま表示）。"""
+        provider = get_beat_provider(provider_id)
+        return provider.label if provider is not None else str(provider_id)
+
+    def _beat_provider_params(self, st) -> dict:
+        """funscript プロバイダには config.json の検索フォルダを注入して渡す。"""
+        params = dict(st.beat_params)
+        if st.beat_provider == "funscript" and not params.get("search_dirs"):
+            dirs = self._funscript_search_dirs()
+            if dirs:
+                params["search_dirs"] = dirs
+        return params
 
     def _funscript_search_dirs(self) -> list[str]:
         """FunScript 検索フォルダのリスト（config.json に永続化）。"""
@@ -487,30 +544,47 @@ class MainWindow(QMainWindow):
             return [str(d) for d in raw if str(d)]
         return []
 
-    def _find_funscript_for(self, audio_path: str) -> Optional[Path]:
-        """音声・動画と同じベースファイル名（拡張子 .funscript）のファイルを探す。"""
-        return find_funscript(audio_path, self._funscript_search_dirs())
+    def open_settings_dialog(self) -> None:
+        """「設定」モーダルダイアログ（ファイルメニュー）。
 
-    def manage_funscript_search_dirs(self) -> None:
-        """FunScript 検索フォルダの一覧を追加/削除して設定に保存する。"""
+        FunScript 検索フォルダと FunScript 切替ルール（切替タイミング /
+        振幅しきい値 / 累積ステップ / 画像循環順）をこの 1 つのモーダルで
+        設定する。切替ルールは 4 項目 1 組の名前付きプリセットとして
+        保存・呼び出しでき、プリセットは設定（config.json）とは別のファイル
+        （funscript_presets.json）に保存され、プロジェクトや再起動をまたいで
+        利用できる。
+        決定後、ビート検出が FunScript の場合は新しい設定で再解析する
+        （検索フォルダを変更したら明示指定ファイルは解除して自動検出し直す）。
+        """
+        st = self.project.settings
+        bp = st.beat_params
+        presets = sanitize_presets(appconfig.load_funscript_presets())
         dirs = self._funscript_search_dirs()
+        dirs_before = list(dirs)
+
         dlg = QDialog(self)
-        dlg.setWindowTitle(self.tr("FunScript 検索フォルダ"))
-        layout = QVBoxLayout(dlg)
-        layout.addWidget(QLabel(
-            self.tr("音声・動画ファイルを選択した際、このフォルダ配下を再帰的に検索し、\n"
-                    "同じベースファイル名の .funscript があれば自動的に読み込みます。")
+        dlg.setWindowTitle(self.tr("設定"))
+        root = QVBoxLayout(dlg)
+
+        # --- FunScript 検索フォルダ -----------------------------------
+        grp_dirs = QGroupBox(self.tr("FunScript 検索フォルダ"), dlg)
+        dirs_layout = QVBoxLayout(grp_dirs)
+        dirs_layout.addWidget(QLabel(
+            self.tr("ビート検出が FunScript のとき、音声・動画の隣に同じベースファイル名の\n"
+                    ".funscript がない場合、このフォルダ配下を再帰的に検索して読み込みます。\n"
+                    "ファイルが見つかれば標準（ACF）のビート作成は行いません。")
         ))
-        lst = QListWidget(dlg)
+        lst = QListWidget(grp_dirs)
         lst.addItems(dirs)
-        layout.addWidget(lst)
-        btn_row = QHBoxLayout()
-        btn_add = QPushButton(self.tr("追加…"), dlg)
-        btn_remove = QPushButton(self.tr("削除"), dlg)
-        btn_row.addWidget(btn_add)
-        btn_row.addWidget(btn_remove)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
+        dirs_layout.addWidget(lst)
+        dirs_btn_row = QHBoxLayout()
+        btn_add = QPushButton(self.tr("追加…"), grp_dirs)
+        btn_remove = QPushButton(self.tr("削除"), grp_dirs)
+        dirs_btn_row.addWidget(btn_add)
+        dirs_btn_row.addWidget(btn_remove)
+        dirs_btn_row.addStretch(1)
+        dirs_layout.addLayout(dirs_btn_row)
+        root.addWidget(grp_dirs)
 
         def add_dir() -> None:
             start = dirs[-1] if dirs else self._start_dir("funscript_dir", str(Path.home()))
@@ -531,48 +605,10 @@ class MainWindow(QMainWindow):
         btn_add.clicked.connect(add_dir)
         btn_remove.clicked.connect(remove_dir)
 
-        box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
-            parent=dlg,
-        )
-        box.accepted.connect(dlg.accept)
-        box.rejected.connect(dlg.reject)
-        layout.addWidget(box)
-
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._config["funscript_search_dirs"] = dirs
-        appconfig.save(self._config)
-        if self.project.audio is not None and not self.project.audio.funscript_switches:
-            cand = self._find_funscript_for(self.project.audio.path)
-            if cand is not None:
-                self._apply_funscript(str(cand))
-
-    def clear_funscript(self) -> None:
-        audio = self.project.audio
-        if audio is None or not audio.funscript_switches:
-            return
-        audio.funscript_path = ""
-        audio.funscript_switches = []
-        self.statusBar().showMessage(self.tr("FunScript を解除しました"))
-        self.relayout()
-
-    def configure_funscript_rules(self) -> None:
-        """FunScript の切替タイミングと画像循環順を設定するダイアログ。
-
-        4項目（モード / 振幅しきい値 / 累積ステップ / 循環順）を 1 組の
-        名前付きプリセットとして保存・呼び出しできます。プリセットは設定
-        （config.json）とは別のファイル（funscript_presets.json）に保存され、
-        プロジェクトや再起動をまたいで利用できます。
-        変更したら設定に保存し、FunScript が読み込まれていれば同じファイルで
-        切替時刻を再計算して再レイアウトする（読み込み中でなければ循環順だけ反映）。
-        """
-        st = self.project.settings
-        presets = sanitize_presets(appconfig.load_funscript_presets())
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle(self.tr("FunScript 切替ルール"))
-        form = QFormLayout(dlg)
+        # --- FunScript 切替ルール -------------------------------------
+        grp_rules = QGroupBox(self.tr("FunScript 切替ルール"), dlg)
+        form = QFormLayout(grp_rules)
+        root.addWidget(grp_rules)
 
         # --- 4項目のウィジェット（先に作成し、プリセット適用から参照できるようにする）---
         mode_box = QComboBox(dlg)
@@ -582,7 +618,7 @@ class MainWindow(QMainWindow):
             ("cumulative", self.tr("累積移動距離")),
         ):
             mode_box.addItem(label, key)
-        idx = mode_box.findData(st.funscript_mode)
+        idx = mode_box.findData(str(bp.get("mode", "up")))
         mode_box.setCurrentIndex(idx if idx >= 0 else 0)
 
         thr_box = QDoubleSpinBox(dlg)
@@ -590,14 +626,14 @@ class MainWindow(QMainWindow):
         thr_box.setSingleStep(5.0)
         thr_box.setDecimals(1)
         thr_box.setSuffix(" (pos)")
-        thr_box.setValue(float(st.funscript_threshold))
+        thr_box.setValue(float(bp.get("threshold", 0.0) or 0.0))
 
         step_box = QDoubleSpinBox(dlg)
         step_box.setRange(1.0, 1000.0)
         step_box.setSingleStep(10.0)
         step_box.setDecimals(1)
         step_box.setSuffix(" (pos)")
-        step_box.setValue(float(st.funscript_step))
+        step_box.setValue(float(bp.get("step", 100.0) or 100.0))
 
         order_box = QComboBox(dlg)
         for key, label in (
@@ -718,7 +754,7 @@ class MainWindow(QMainWindow):
         )
         box.accepted.connect(dlg.accept)
         box.rejected.connect(dlg.reject)
-        form.addRow(box)
+        root.addWidget(box)
 
         # 記憶したプリセット選択を復元（実在すれば 4項目へ適用して combo と一致させる）
         remembered = str(self._config.get("funscript_preset", ""))
@@ -728,9 +764,17 @@ class MainWindow(QMainWindow):
 
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        st.funscript_mode = str(mode_box.currentData())
-        st.funscript_threshold = float(thr_box.value())
-        st.funscript_step = float(step_box.value())
+
+        # --- 決定後の反映 -------------------------------------------------
+        dirs_changed = dirs != dirs_before
+        if dirs_changed:
+            self._config["funscript_search_dirs"] = dirs
+            appconfig.save(self._config)
+
+        st.beat_params = dict(st.beat_params)
+        st.beat_params["mode"] = str(mode_box.currentData())
+        st.beat_params["threshold"] = float(thr_box.value())
+        st.beat_params["step"] = float(step_box.value())
         st.photo_order = str(order_box.currentData())
 
         # プリセット一覧を別ファイル（funscript_presets.json）に保存（プロジェクト非依存で再利用できる）
@@ -740,12 +784,16 @@ class MainWindow(QMainWindow):
         appconfig.save(self._config)
 
         audio = self.project.audio
-        if audio is not None and audio.funscript_path:
-            # 同じ FunScript を新しいルールで読み直して切替時刻を再計算する
-            self._apply_funscript(audio.funscript_path)
+        if audio is not None and st.beat_provider == "funscript":
+            if dirs_changed:
+                # 検索フォルダ変更を反映するため明示指定ファイルを解除して
+                # 自動検出から読み直す
+                st.beat_params["path"] = ""
+            # FunScript プロバイダ: 新しいルールで読み直して切替時刻を再計算する
+            self._start_analysis(audio.path, force=True)
         else:
             self.relayout()
-        self.statusBar().showMessage(self.tr("FunScript 切替ルールを更新しました"))
+        self.statusBar().showMessage(self.tr("設定を保存しました"))
 
     def _on_media_error(self, error, message: str) -> None:
         # 動画コンテナなど QMediaPlayer が再生できない形式のフィードバック。
@@ -761,10 +809,7 @@ class MainWindow(QMainWindow):
         self.slides = plan.slides
         dur = total_duration(self.slides)
         audio = self.project.audio
-        if audio is not None and audio.funscript_switches:
-            beats = audio.funscript_switches
-        else:
-            beats = audio.beats if audio is not None else []
+        beats = audio.beats if audio is not None else []
         self.preview.set_slides(self.slides)
         self.preview.set_background(self.project.settings.presentation.background)
         self.preview.set_background_mode(self.project.settings.presentation.background_mode)
@@ -1184,6 +1229,7 @@ class MainWindow(QMainWindow):
         self._dominant_bg_action.setChecked(
             self.project.settings.presentation.background_mode == "dominant"
         )
+        self._sync_beat_provider_menu()
         self.material.set_photos(self.project.photos)
         if self.project.audio:
             self.player.setSource(_url(self.project.audio.path))
@@ -1434,6 +1480,13 @@ class MainWindow(QMainWindow):
         s.video_wipe_corner = corner if corner in WIPE_CORNERS else "bottom_right"
         size = str(d.get("video_wipe_size", s.video_wipe_size))
         s.video_wipe_size = size if size in WIPE_SIZES else "1/8"
+        # ビート検出プロバイダとパラメータ（未知の id はそのまま保持し解析時にフォールバック）
+        provider = str(d.get("beat_provider", "") or "")
+        if provider:
+            s.beat_provider = provider
+        raw_params = d.get("beat_params")
+        if isinstance(raw_params, dict):
+            s.beat_params = {str(k): v for k, v in raw_params.items()}
         # プレビューの背景モードにも反映（プレゼン窓は未生成なので起動時は不要）
         self.preview.set_background_mode(s.presentation.background_mode)
 
@@ -1463,9 +1516,10 @@ class MainWindow(QMainWindow):
     def _apply_persisted_funscript_preset(self) -> None:
         """config.json に記憶した FunScript プリセット選択を既定ルールへ反映する。
 
-        選択名が実在するプリセットに一致すれば、その 4項目（モード / しきい値 /
-        ステップ / 循環順）を project.settings へ適用する。起動時（プロジェクト
-        読込前）に呼ぶため、後から .rslide を読み込めばプロジェクト側のルールが優先される。
+        選択名が実在するプリセットに一致すれば、その 3項目（モード / しきい値 /
+        ステップ）を settings.beat_params に、循環順を settings.photo_order に適用する。
+        プロバイダ自体の選択（beat_provider）は settings に永続化されるためここでは触れない。
+        起動時（プロジェクト読込前）に呼ぶため、後から .rslide を読み込めばプロジェクト側の設定が優先される。
         """
         name = str(self._config.get("funscript_preset", ""))
         if not name:
@@ -1475,9 +1529,10 @@ class MainWindow(QMainWindow):
         if p is None:
             return
         s = self.project.settings
-        s.funscript_mode = p["mode"]
-        s.funscript_threshold = p["threshold"]
-        s.funscript_step = p["step"]
+        s.beat_params = dict(s.beat_params)
+        s.beat_params["mode"] = p["mode"]
+        s.beat_params["threshold"] = p["threshold"]
+        s.beat_params["step"] = p["step"]
         s.photo_order = p["order"]
 
     def _save_persisted_settings(self) -> None:
@@ -1494,6 +1549,8 @@ class MainWindow(QMainWindow):
             "video_wipe": bool(s.video_wipe),
             "video_wipe_corner": s.video_wipe_corner,
             "video_wipe_size": s.video_wipe_size,
+            "beat_provider": str(s.beat_provider),
+            "beat_params": dict(s.beat_params),
         }
         appconfig.save(self._config)
 

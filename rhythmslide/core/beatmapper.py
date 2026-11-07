@@ -55,24 +55,18 @@ def build_timeline(
 
     duration = float(audio.duration)
     beats = [float(b) for b in audio.beats if 0.0 <= float(b) <= duration]
-    fs = [
-        float(t) for t in getattr(audio, "funscript_switches", []) if 0.0 <= float(t) <= duration
-    ]
+    is_funscript = audio.provider == "funscript"
 
-    if fs:
-        # FunScript があれば、その切替時刻をグリッドとして最優先で使う
-        # （信頼度や BPM に依存せず、切替点そのものを境界とする＝単位は 1）。
-        grid: list[float] = fs
-        prefix = "funscript"
-        funit: float | None = 1
-    elif (
+    if (
         audio.method == "beat"
         and audio.confidence >= settings.min_confidence
         and len(beats) >= 4
     ):
-        grid = beats
-        prefix = "beat"
-        funit = None
+        # 信頼度十分なグリッド（ビート解析 or FunScript 切替点）をそのまま使う。
+        # FunScript は切替点そのものが境界なので単位は 1 固定。
+        grid: list[float] = beats
+        prefix = "funscript" if is_funscript else "beat"
+        funit: float | None = 1 if is_funscript else None
     else:
         # リズム信頼度不足など: 固定間隔で全写真をトラック全域に 1 枚ずつ配置
         return _fixed_slides(photos, duration, settings)

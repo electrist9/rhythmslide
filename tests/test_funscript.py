@@ -1,7 +1,7 @@
 """FunScript 由来の画像切替タイミングの検証。
 
 - パーサ: pos 差分が 0 以上の at を切替点として採用する規則。
-- BeatMapper: FunScript があれば音声解析ビートより優先してグリッド化する。
+- BeatMapper: FunScript は provider="funscript" の解析結果（ビート列）としてグリッド化する。
 """
 from __future__ import annotations
 
@@ -146,16 +146,18 @@ def test_switch_times_cumulative_step_zero_no_switch():
     assert switch_times(acts, mode="cumulative", step=0.0) == []
 
 
-# --- Settings の新フィールド往復（.rslide 後方互換）----------------------
+# --- Settings のビートプロバイダ設定往復（.rslide 後方互換）--------------
 def test_settings_new_fields_roundtrip():
     s = Settings(
-        funscript_mode="peak", funscript_threshold=25.0,
-        funscript_step=200.0, photo_order="pingpong", render_fps=144,
+        beat_provider="funscript",
+        beat_params={"mode": "peak", "threshold": 25.0, "step": 200.0},
+        photo_order="pingpong", render_fps=144,
     )
     got = Settings.from_dict(s.to_dict())
-    assert got.funscript_mode == "peak"
-    assert got.funscript_threshold == 25.0
-    assert got.funscript_step == 200.0
+    assert got.beat_provider == "funscript"
+    assert got.beat_params["mode"] == "peak"
+    assert got.beat_params["threshold"] == 25.0
+    assert got.beat_params["step"] == 200.0
     assert got.photo_order == "pingpong"
     assert got.render_fps == 144
 
@@ -163,23 +165,50 @@ def test_settings_new_fields_roundtrip():
 def test_settings_defaults_and_invalid_fallback():
     # 旧プロジェクト（フィールド無し）は既定値にフォールバック
     old = Settings.from_dict({"unit_beats": 4})
-    assert old.funscript_mode == "up"
-    assert old.funscript_threshold == 0.0
-    assert old.funscript_step == 100.0
+    assert old.beat_provider == "acf"
+    assert old.beat_params == {}
     assert old.photo_order == "forward"
     assert old.render_fps == 60
-    # 不正値は既定へ正規化
-    bad = Settings.from_dict({
+    # 旧フィールド（FunScript ルール）は beat_params へ移行され、不正値は既定へ正規化
+    legacy = Settings.from_dict({
         "funscript_mode": "hoge", "funscript_threshold": -5,
         "funscript_step": 0, "photo_order": "???", "render_fps": 0,
     })
-    assert bad.funscript_mode == "up"
-    assert bad.funscript_threshold == 0.0
-    assert bad.funscript_step == 100.0
-    assert bad.photo_order == "forward"
-    assert bad.render_fps == 60
+    assert legacy.beat_params["mode"] == "up"
+    assert legacy.beat_params["threshold"] == 0.0
+    assert legacy.beat_params["step"] == 100.0
+    assert legacy.photo_order == "forward"
+    assert legacy.render_fps == 60
+    # 妥当な旧フィールドも移行される
+    migrated = Settings.from_dict({
+        "funscript_mode": "peak", "funscript_threshold": 25.0, "funscript_step": 200.0,
+    })
+    assert migrated.beat_params == {"mode": "peak", "threshold": 25.0, "step": 200.0}
     # 範囲内の任意 FPS はそのまま採用（メニュー外値も許容）
     assert Settings.from_dict({"render_fps": 120}).render_fps == 120
+
+
+def test_audio_info_legacy_funscript_migration():
+    # 旧プロジェクトの funscript_switches / funscript_path は funscript プロバイダへ移行
+    old = {
+        "path": "/a.mp3", "duration": 10.0, "bpm": 0.0, "confidence": 0.2,
+        "beats": [0.0, 2.0], "method": "fixed",
+        "funscript_path": "/fs/a.funscript",
+        "funscript_switches": [1.0, 2.0, 3.0, 4.0],
+    }
+    a = AudioInfo.from_dict(old)
+    assert a is not None
+    assert a.provider == "funscript"
+    assert a.beats == [1.0, 2.0, 3.0, 4.0]
+    assert a.confidence == 1.0
+    assert a.method == "beat"
+    assert a.provider_params["path"] == "/fs/a.funscript"
+    # 移行後の新フィールドで往復しても同じ
+    got = AudioInfo.from_dict(a.to_dict())
+    assert got is not None
+    assert got.provider == "funscript"
+    assert got.provider_params["path"] == "/fs/a.funscript"
+    assert got.beats == [1.0, 2.0, 3.0, 4.0]
 
 
 # --- 名前付きプリセット（make_preset / sanitize_presets）------------------
@@ -265,40 +294,48 @@ def test_load_funscript_missing(tmp_path):
         raise AssertionError("不存在で ValueError が出るはず")
 
 
-# --- BeatMapper 連携 -------------------------------------------------------
+# --- BeatMapper 連携（FunScript は provider="funscript" の解析結果として扱う）---
 def _photos(n: int) -> list[PhotoItem]:
     return [PhotoItem(path=f"/p/{i:03d}.jpg", folder=".") for i in range(n)]
 
 
-def _audio(dur: float, switches: list[float], conf: float = 0.0,
-           method: str = "fixed") -> AudioInfo:
-    # 信頼度を低くし method も fixed にしても、FunScript があればそれが優先される
+def _audio(dur: float, switches: list[float], conf: float = 1.0,
+           method: str = "beat", provider: str = "funscript") -> AudioInfo:
+    # FunScript プロバイダの解析結果は常に method="beat" / conf=1.0 でビート列が入る
     return AudioInfo(
-        path="/a.mp3", duration=dur, bpm=0.0, confidence=conf, beats=[],
-        method=method, funscript_switches=list(switches),
+        path="/a.mp3", duration=dur, bpm=0.0, confidence=conf,
+        beats=list(switches), method=method, provider=provider,
     )
 
 
 def test_funscript_grid_drives_boundaries():
-    a = _audio(4.0, [1.0, 2.0, 3.0])
+    a = _audio(5.0, [1.0, 2.0, 3.0, 4.0])
     plan = build_timeline(_photos(2), a, Settings())
     assert plan.method.startswith("funscript")
     starts = [round(s.start, 6) for s in plan.slides]
-    # 境界 0,1,2,3,4 → 4 スロット。写真 2 枚 < 4 なので循環
-    assert starts == [0.0, 1.0, 2.0, 3.0]
+    # 境界 0,1,2,3,4,5 → 5 スロット。写真 2 枚 < 5 なので循環
+    assert starts == [0.0, 1.0, 2.0, 3.0, 4.0]
     assert "cycle" in plan.method
 
 
-def test_funscript_overrides_low_confidence():
-    # 音声解析は信頼度不足（fixed）でも、FunScript があれば funscript 経路
-    a = _audio(3.0, [1.0, 2.0], conf=0.0, method="fixed")
-    plan = build_timeline(_photos(3), a, Settings())
+def test_funscript_forces_unit_one():
+    # 単位ビート 4 を設定しても FunScript は切替点そのまま（単位 1 固定）
+    a = _audio(5.0, [1.0, 2.0, 3.0, 4.0])
+    plan = build_timeline(_photos(5), a, Settings(unit_beats=4))
     assert plan.method.startswith("funscript")
-    assert len(plan.slides) == 3  # 境界 0,1,2,3 → 3 スロット = 写真 3 枚で 1:1
+    assert plan.unit_beats == 1
+    assert len(plan.slides) == 5  # 境界 0,1,2,3,4,5 → 5 スロット = 写真 5 枚で 1:1
+
+
+def test_funscript_few_switches_falls_back_to_fixed():
+    # 切替点 4 件未満はグリッドとして不採用 → 固定間隔へ
+    a = _audio(4.0, [1.0, 2.0, 3.0])
+    plan = build_timeline(_photos(3), a, Settings())
+    assert plan.method.startswith("fixed")
 
 
 def test_no_funscript_falls_back_to_fixed():
-    a = _audio(3.0, [], conf=0.0, method="fixed")
+    a = _audio(3.0, [], conf=0.0, method="fixed", provider="acf")
     plan = build_timeline(_photos(3), a, Settings())
     assert plan.method.startswith("fixed")
 

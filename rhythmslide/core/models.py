@@ -226,12 +226,10 @@ class Settings:
     random_order: bool = False
     #: 画像の切り替えごとにトランジットをランダムに選ぶ（写真個別指定が優先）
     random_transition: bool = False
-    #: FunScript の切替タイミング導出モード（"up"=上昇のみ / "peak"=局所極値 / "cumulative"=累積距離）
-    funscript_mode: str = "up"
-    #: pos 差分の最小振幅。これ未満の微小な動きは切替に数えない（0 で全動作）
-    funscript_threshold: float = 0.0
-    #: cumulative モードで 1 切替ごとに積算する移動距離（pos 単位）
-    funscript_step: float = 100.0
+    #: ビート検出プロバイダの id（"acf" / "funscript" / プラグイン由来 id）
+    beat_provider: str = "acf"
+    #: 選択中プロバイダのパラメータ（provider 側で sanitize される。JSON 値のまま保持）
+    beat_params: dict[str, Any] = field(default_factory=dict)
     #: 写真の循環順（"forward"=順送り / "pingpong"=往復）
     photo_order: str = "forward"
     #: 動画ファイルを読み込んだとき、映像をスライドショー画面のすみへワイプ表示する
@@ -253,9 +251,8 @@ class Settings:
             "min_confidence": float(self.min_confidence),
             "random_order": bool(self.random_order),
             "random_transition": bool(self.random_transition),
-            "funscript_mode": self.funscript_mode,
-            "funscript_threshold": float(self.funscript_threshold),
-            "funscript_step": float(self.funscript_step),
+            "beat_provider": self.beat_provider,
+            "beat_params": dict(self.beat_params),
             "photo_order": self.photo_order,
             "video_wipe": bool(self.video_wipe),
             "video_wipe_corner": self.video_wipe_corner,
@@ -273,6 +270,20 @@ class Settings:
                 unit = int(val) if val.is_integer() else val
             except ValueError:
                 unit = 0.5
+        provider = str(data.get("beat_provider") or "acf")
+        raw_params = data.get("beat_params")
+        beat_params: dict[str, Any] = (
+            {str(k): v for k, v in raw_params.items()} if isinstance(raw_params, dict) else {}
+        )
+        # 旧プロジェクトの funscript_* キー → funscript プロバイダのパラメータへ移行
+        if "mode" not in beat_params and data.get("funscript_mode") is not None:
+            beat_params["mode"] = _choice(
+                data.get("funscript_mode"), ("up", "peak", "cumulative"), "up"
+            )
+        if "threshold" not in beat_params and data.get("funscript_threshold") is not None:
+            beat_params["threshold"] = _nonneg_float(data.get("funscript_threshold"), 0.0)
+        if "step" not in beat_params and data.get("funscript_step") is not None:
+            beat_params["step"] = _positive_float(data.get("funscript_step"), 100.0)
         return cls(
             unit_beats=unit,
             transition=str(data.get("transition", "none")),
@@ -283,9 +294,8 @@ class Settings:
             min_confidence=float(data.get("min_confidence", 0.5)),
             random_order=bool(data.get("random_order", False)),
             random_transition=bool(data.get("random_transition", False)),
-            funscript_mode=_choice(data.get("funscript_mode"), ("up", "peak", "cumulative"), "up"),
-            funscript_threshold=_nonneg_float(data.get("funscript_threshold"), 0.0),
-            funscript_step=_positive_float(data.get("funscript_step"), 100.0),
+            beat_provider=provider,
+            beat_params=beat_params,
             photo_order=_choice(data.get("photo_order"), ("forward", "pingpong"), "forward"),
             video_wipe=bool(data.get("video_wipe", False)),
             video_wipe_corner=_choice(
@@ -345,9 +355,10 @@ class AudioInfo:
     #: 強サビ検出・写真密度に使うエネルギープロファイル（100ms 窓）
     energy_times: list[float] = field(default_factory=list)
     energy_values: list[float] = field(default_factory=list)
-    #: FunScript（.funscript）由来の画像切替時刻（秒）。空なら音声解析のビートを使う。
-    funscript_path: str = ""
-    funscript_switches: list[float] = field(default_factory=list)
+    #: 解析に使ったビートプロバイダの id（"acf" / "funscript" / ...）
+    provider: str = "acf"
+    #: そのときの provider パラメータ（再解析・キャッシュキーの再現に使う）
+    provider_params: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -361,27 +372,45 @@ class AudioInfo:
             "method": self.method,
             "energy_times": [round(float(t), 3) for t in self.energy_times],
             "energy_values": [round(float(v), 5) for v in self.energy_values],
-            "funscript_path": self.funscript_path,
-            "funscript_switches": [round(float(t), 4) for t in self.funscript_switches],
+            "provider": self.provider,
+            "provider_params": dict(self.provider_params),
         }
 
     @classmethod
     def from_dict(cls, data: Optional[dict[str, Any]]) -> Optional["AudioInfo"]:
         if not data:
             return None
+        beats = [float(b) for b in data.get("beats", [])]
+        confidence = float(data.get("confidence", 0.0))
+        method = str(data.get("method", "beat"))
+        provider = str(data.get("provider") or "")
+        raw_params = data.get("provider_params")
+        provider_params: dict[str, Any] = (
+            {str(k): v for k, v in raw_params.items()} if isinstance(raw_params, dict) else {}
+        )
+        switches = [float(t) for t in data.get("funscript_switches", [])]
+        if switches:
+            # 旧プロジェクト: FunScript の切替点が有効だった → funscript プロバイダへ移行
+            provider = provider or "funscript"
+            beats = switches
+            confidence = 1.0
+            method = "beat"
+            fs_path = str(data.get("funscript_path", ""))
+            if fs_path and "path" not in provider_params:
+                provider_params["path"] = fs_path
         return cls(
             path=str(data.get("path", "")),
             duration=float(data.get("duration", 0.0)),
             bpm=float(data.get("bpm", 0.0)),
-            confidence=float(data.get("confidence", 0.0)),
-            beats=[float(b) for b in data.get("beats", [])],
+            confidence=confidence,
+            beats=beats,
             cache_key=str(data.get("cache_key", "")),
             analyzed_at=data.get("analyzed_at"),
-            method=str(data.get("method", "beat")),
+            method=method,
             energy_times=[float(t) for t in data.get("energy_times", [])],
             energy_values=[float(v) for v in data.get("energy_values", [])],
-            funscript_path=str(data.get("funscript_path", "")),
-            funscript_switches=[float(t) for t in data.get("funscript_switches", [])],
+            provider=provider or "acf",
+            provider_params=provider_params,
         )
 
 
