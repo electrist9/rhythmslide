@@ -77,9 +77,9 @@ def test_funscript_preset_selection_persisted(qtbot, tmp_path, monkeypatch):
     w = MainWindow()
     qtbot.addWidget(w)
     s = w.project.settings
-    assert s.funscript_mode == "peak"
-    assert s.funscript_threshold == 15.0
-    assert s.funscript_step == 100.0
+    assert s.beat_params.get("mode") == "peak"
+    assert s.beat_params.get("threshold") == 15.0
+    assert s.beat_params.get("step") == 100.0
     assert s.photo_order == "pingpong"
 
 
@@ -95,7 +95,8 @@ def test_funscript_preset_missing_keeps_default(qtbot, tmp_path, monkeypatch):
     w = MainWindow()
     qtbot.addWidget(w)
     s = w.project.settings
-    assert s.funscript_mode == "up"
+    assert s.beat_provider == "acf"
+    assert s.beat_params.get("mode", "up") == "up"
     assert s.photo_order == "forward"
 
 
