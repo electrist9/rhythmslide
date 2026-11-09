@@ -1,0 +1,238 @@
+"""ビート検出プロバイダのサンプル: 標準リズム解析（ACF）。
+
+このファイルは内蔵プロバイダ（id="acf"）の実装であると同時に、
+プロバイダ開発者向けのサンプルを兼ねている。
+
+自分のプロバイダを作るには、このファイルを
+
+    <データ保存先>/beatproviders/my_beats.py
+
+にコピーして、id / label / version / 解析ロジックを書き換えるとよい。
+このディレクトリの .py はアプリ起動時に自動で読み込まれる
+（``load_beat_provider_plugins``）。``_`` で始まるファイルは読み飛ばされる。
+読み込まれたファイルは ``rhythmslide_beatprovider_<stem>`` という名前で
+import されるため、下の例のように絶対 import で契約要素を取得する。
+
+プロバイダ契約（``BeatProvider``）の実装手順:
+
+1. ``id``: プロジェクト JSON とキャッシュに永続化される言語非依存のキー。
+   一意にする。既存 id と衝突すると上書きされる（既存プロバイダの
+   差し替えも同じ id で登録するだけでできる）。
+2. ``label``: メニューに表示される名前（日本語可）。
+3. ``version``: 実装の版。キャッシュキーに含まれるので、解析ロジックを
+   変更したら上げる（古いキャッシュ結果が自動で無効化される）。
+4. ``requires_audio``: 音声デコード済みの特徴量（オンセット包絡など）が
+   必要なら True。False の場合は ``audio_path`` と ``duration`` だけの
+   軽量な特徴量が渡される（音声不要のプロバイダは ``funscript.py`` 参照）。
+5. ``default_params`` / ``sanitize_params``: パラメータはプロジェクト JSON
+   に保存される。``sanitize_params`` で古い設定や手編集による不正値を
+   防御する（例は ``funscript.py`` 参照）。acf はパラメータを持たない。
+6. ``analyze``: 特徴量（AudioFeatures）とパラメータからビート列を作る。
+   例外を投げないこと。ビートを作れないときは空の
+   ``BeatDetection(beats=[], method="fixed", confidence=0.0)`` を返す。
+   オーケストレーター（``analyze_audio``）はそれを検知して標準 ACF
+   （このプロバイダ）へフォールバックする。
+
+出力（BeatDetection）の意味:
+
+- ``beats``: 秒単位のビート時刻。昇順であること
+- ``bpm``: 推定 BPM（分からなければ 0.0）
+- ``confidence``: 0.0〜1.0。低い値は Beatmapper で固定間隔扱いになる
+- ``method``: "beat"（ビートグリッド）/ "fixed"（固定間隔）
+- ``tempo_candidates``: (BPM, スコア) の一覧。UI 表示用（省略可）
+"""
+from __future__ import annotations
+
+import math
+from typing import Any
+
+import numpy as np
+
+from rhythmslide.core.analyzer import MAX_BPM, MIN_BPM, _MIN_ACF_PEAK
+from rhythmslide.core.beatproviders import (
+    AudioFeatures,
+    BeatDetection,
+    register_beat_provider,
+)
+
+
+# ======================================================================
+# 解析の部品
+# ======================================================================
+# ビート検出本体は「テンポ推定」と「グリッド生成」の 2 段階に分解して
+# ある。自作プロバイダでも、この程度の粒度で関数を分けておくと
+# テストしやすく読みやすい実装になる。
+def fold_bpm(bpm: float, scores: np.ndarray, lags: np.ndarray, fps: float) -> float:
+    """半テンポ/倍テンポの曖昧性を選ぶ。"""
+    if bpm <= 0:
+        return bpm
+
+    def score_at(candidate: float) -> float:
+        lag = fps * 60.0 / candidate
+        if lag < lags[0] or lag > lags[-1]:
+            return -1.0
+        i = int(np.argmin(np.abs(lags - lag)))
+        return float(scores[i])
+
+    doubled = bpm * 2.0
+    halved = bpm / 2.0
+    if bpm < 70.0 and doubled <= MAX_BPM:
+        if score_at(doubled) >= 0.85 * score_at(bpm):
+            return doubled
+    if bpm > 170.0 and halved >= MIN_BPM:
+        if score_at(halved) >= 0.85 * score_at(bpm):
+            return halved
+    return bpm
+
+
+def estimate_tempo(
+    env: np.ndarray, fps: float
+) -> tuple[float, float, list[tuple[float, float]]]:
+    """オンセット包絡の自己相関からテンポと信頼度を求める（計画書 5.1-3 / 5.1-6）。"""
+    if env.size < 8 or fps <= 0:
+        return 0.0, 0.0, []
+
+    n = 1 << max(8, int(math.ceil(math.log2(2 * env.size))))
+    spec = np.fft.rfft(env, n=n)
+    acf = np.fft.irfft(spec * np.conj(spec), n=n)[: env.size]
+    if acf[0] <= 1e-9:
+        return 0.0, 0.0, []
+    acf = acf / acf[0]
+
+    lag_lo = max(2, int(round(fps * 60.0 / MAX_BPM)))
+    lag_hi = min(acf.size - 1, int(round(fps * 60.0 / MIN_BPM)))
+    if lag_hi <= lag_lo:
+        return 0.0, 0.0, []
+
+    lags = np.arange(lag_lo, lag_hi + 1)
+    scores = acf[lags].astype(np.float64)
+    bpms = fps * 60.0 / lags
+
+    # 120 BPM 周辺をわずかに優遇する事前分布（octave ミス対策）
+    prior = np.exp(-0.5 * (np.log2(bpms / 120.0) / 1.15) ** 2)
+    weighted = scores * (0.72 + 0.28 * prior)
+
+    order = np.argsort(weighted)[::-1]
+    candidates: list[tuple[float, float]] = []
+    for idx in order[:5]:
+        candidates.append((float(bpms[idx]), float(scores[idx])))
+
+    best = int(order[0])
+    peak = float(scores[best])
+    # 信頼度: 自己相関ピークの突出度 × 絶対的な周期性の強さ
+    mask = np.ones(scores.size, dtype=bool)
+    mask[max(0, best - 2) : best + 3] = False
+    rest = scores[mask]
+    if rest.size:
+        prominence = (peak - float(np.median(rest))) / max(peak - float(np.min(rest)) + 1e-9, 1e-9)
+    else:
+        prominence = 0.0
+    strength = float(np.clip((peak - _MIN_ACF_PEAK) / 0.30, 0.0, 1.0))
+    confidence = float(np.clip(prominence, 0.0, 1.0) * strength)
+
+    # 放物線補間で BPM を refine
+    bpm = float(bpms[best])
+    if 0 < best < scores.size - 1:
+        y0, y1, y2 = scores[best - 1], scores[best], scores[best + 1]
+        denom = y0 - 2 * y1 + y2
+        if abs(denom) > 1e-12:
+            shift = 0.5 * (y0 - y2) / denom
+            shift = float(np.clip(shift, -1.0, 1.0))
+            lag_ref = lags[best] + shift
+            if lag_ref > 0:
+                bpm = float(fps * 60.0 / lag_ref)
+
+    # 半テンポ/倍テンポの曖昧さを 60〜150 BPM 帯へ寄せる
+    bpm = fold_bpm(bpm, scores, lags, fps)
+    return bpm, confidence, candidates
+
+
+def beat_grid(env: np.ndarray, bpm: float, fps: float, duration: float) -> list[float]:
+    """ビートグリッド生成（計画書 5.1-4）。位相推定 → 等間隔 → 局所オンセットで微調整。"""
+    if bpm <= 0 or fps <= 0 or env.size < 4:
+        return []
+    period = fps * 60.0 / bpm
+    if period < 2:
+        return []
+    period_int = int(round(period))
+
+    # 位相探索: comb filters との一致が最大のオフセット
+    n_beats = max(1, int((env.size - 1) // period))
+    best_phase, best_score = 0, -np.inf
+    for phase in range(max(1, period_int)):
+        idx = np.round(phase + np.arange(n_beats) * period).astype(np.int64)
+        idx = idx[idx < env.size]
+        if idx.size < 2:
+            continue
+        score = float(env[idx].sum())
+        if score > best_score:
+            best_score, best_phase = score, phase
+
+    idx = np.round(best_phase + np.arange(n_beats) * period).astype(np.int64)
+    idx = idx[idx < env.size]
+
+    # 局所オンセットへ微調整（±1/4 ビートまで）
+    radius = max(2, int(period * 0.25))
+    smoothed = np.convolve(env, np.ones(3, dtype=np.float32) / 3.0, mode="same")
+    refined: list[int] = []
+    for center in idx:
+        lo = max(0, center - radius)
+        hi = min(smoothed.size, center + radius + 1)
+        window = smoothed[lo:hi]
+        if window.size:
+            refined.append(int(lo + int(np.argmax(window))))
+        else:
+            refined.append(int(center))
+
+    beats: list[float] = []
+    prev = -1.0
+    min_gap = 0.25 * (60.0 / bpm)
+    for frame in refined:
+        t = frame / fps  # フレーム番号 → 秒（fps = sr / hop）
+        if t < 0 or t > duration:
+            continue
+        if beats and t - prev < min_gap:
+            continue
+        beats.append(float(t))
+        prev = t
+    return beats
+
+
+# ======================================================================
+# プロバイダ本体
+# ======================================================================
+@register_beat_provider
+class AcfBeatProvider:
+    """標準のリズム解析（オンセット包絡の自己相関 + ビートグリッド）。
+
+    ``@register_beat_provider`` をクラスに付けると、モジュールが
+    import された時点で登録表に載る。プラグインファイルでも同じ書き方
+    で登録できる。
+    """
+
+    id = "acf"
+    label = "ACF（標準）"
+    version = "1"
+    requires_audio = True
+
+    def default_params(self) -> dict[str, Any]:
+        return {}
+
+    def sanitize_params(self, raw: dict[str, Any]) -> dict[str, Any]:
+        return {}
+
+    def analyze(self, feats: AudioFeatures, params: dict[str, Any]) -> BeatDetection:
+        bpm, confidence, candidates = estimate_tempo(feats.onset_env, feats.onset_fps)
+        beats = beat_grid(feats.onset_env, bpm, feats.onset_fps, feats.duration) if bpm > 0 else []
+        method = "beat"
+        if len(beats) < 4 or confidence <= 0.0:
+            # ビートが少なすぎる・周期性が弱い場合は固定間隔扱い。
+            # Beatmapper が confidence の閾値と合わせて最終判定する。
+            method = "fixed"
+        return BeatDetection(
+            bpm=float(bpm),
+            beats=[float(b) for b in beats],
+            confidence=float(confidence),
+            method=method,
+            tempo_candidates=candidates,
+        )
